@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+#Excluded folders
+/data/*
+/experiments/wandb/*
+/experiments/Old/*
+
 # Distribution / packaging
 .Python
 build/
