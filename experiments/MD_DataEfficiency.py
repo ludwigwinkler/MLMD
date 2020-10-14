@@ -25,13 +25,13 @@ FloatTensor = torch.FloatTensor
 torch.set_printoptions(precision=5, sci_mode=False)
 np.set_printoptions(precision=5, suppress=True)
 
-sys.path.append("../../..")  # Up to -> KFAC -> Optimization -> PHD
+sys.path.append("../..")  # experiments -> MLMD -> PHD
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 cwd = os.path.abspath(os.getcwd())
 os.chdir(cwd)
 
-from DiffEqNets.MolecularDynamics.src.MD_Geometry import Atom
+from MLMD.src.MD_Geometry import Atom
 
 from pytorch_lightning import LightningModule
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -41,10 +41,10 @@ import wandb
 
 # seed_everything(0)
 
-from DiffEqNets.MolecularDynamics.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM
-from DiffEqNets.MolecularDynamics.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
-from DiffEqNets.MolecularDynamics.src.MD_HyperparameterParser import HParamParser
-from DiffEqNets.MolecularDynamics.src.MD_DataUtils import load_data, load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
+from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM
+from MLMD.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
+from MLMD.src.MD_HyperparameterParser import HParamParser
+from MLMD.src.MD_DataUtils import load_data, load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
 	Sequential_BiDirectional_TimeSeries_DataSet
 
 
@@ -90,64 +90,52 @@ class Model(LightningModule):
 		# exit()
 		batch_loss = (batch_pred - batch_y).abs().sum(dim=1).mean()
 
-		tqdm_dict = {'t': batch_t[0]}
-		logs = {'train/mse': batch_loss}
-		output = {'loss': batch_loss, 'progress_bar': tqdm_dict, 'log': logs}
-		return output
+		self.log('t', batch_t[0], prog_bar=True)
+		self.log('Train/MSE', batch_loss, prog_bar=True)
+
+		return {'loss': batch_loss, 'Train/MSE': batch_loss}
+
+	def training_epoch_end(self, outputs):
+		val_loss = torch.stack([x['Train/MSE'] for x in outputs]).mean()
+		self.log('Train/Epoch_MSE', val_loss, prog_bar=True)
+
+		if False and self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
+			angle = torch.stack([x['Angle'] for x in outputs]).mean()
+			dist = torch.stack([x['Dist'] for x in outputs]).mean()
+
+			# self.plot_velocity_histogram()
+			# self.plot_predictions()
 
 	def validation_step(self, batch, batch_idx):
 		batch_y0, batch_t, batch_y = batch
 
 		batch_pred = self.forward(batch_t[0], batch_y0)
+		batch_loss = (batch_pred - batch_y).abs().sum(dim=1).mean()
 
-		# print(f"{batch_pred.shape=} {batch_y.shape=}")
+		# self.log('Val/MSE', batch_loss, prog_bar=True)
 
-		batch_loss = F.mse_loss(batch_pred, batch_y)
-
-		tqdm_dict = {'t': batch_t[0]}
-		output = {'val_loss': batch_loss}
-		if self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
+		if False and self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
 			batch_pred_angles, batch_pred_distances = Atom(batch_pred, hparams).compute_MD_geometry()
 			batch_angles, batch_distances = Atom(batch_y, hparams).compute_MD_geometry()
 
 			batch_angle_loss = F.mse_loss(batch_pred_angles, batch_angles)
 			batch_distance_loss = F.mse_loss(batch_pred_distances, batch_distances)
 
-			tqdm_dict.update({'Angle': batch_angle_loss, 'Dist': batch_distance_loss})
-			output.update({'Angle': batch_angle_loss, 'Dist': batch_distance_loss})
+			# tqdm_dict.update({'Angle': batch_angle_loss, 'Dist': batch_distance_loss})
+			# output.update({'Angle': batch_angle_loss, 'Dist': batch_distance_loss})
 
-		output.update({'progress_bar': tqdm})
-		return output
+
+		return {'Val/MSE': batch_loss}
 
 	def validation_epoch_end(self, outputs):
-		loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-		logs = {'val/mse': loss}
+		val_loss = torch.stack([x['Val/MSE'] for x in outputs]).mean()
+		self.log('Val/MSE', val_loss, prog_bar=True)
+
 		if False and self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
 			angle = torch.stack([x['Angle'] for x in outputs]).mean()
 			dist = torch.stack([x['Dist'] for x in outputs]).mean()
 			# self.plot_velocity_histogram()
 			# self.plot_predictions()
-			tqdm_dict = {'val_loss': loss, 'Angle': angle, 'Dist': dist}
-			logs.update({'val/angle': angle, 'val/dist': dist})
-		else:
-			tqdm_dict = {'val_loss': loss}
-
-		return {'val_loss': loss, 'val/mse': loss, 'progress_bar': tqdm_dict, 'log': logs}
-
-	def training_epoch_end(self, outputs):
-		loss = torch.stack([x['loss'] for x in outputs]).mean()
-		logs = {'train/mse': loss}
-		if False and self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
-			angle = torch.stack([x['Angle'] for x in outputs]).mean()
-			dist = torch.stack([x['Dist'] for x in outputs]).mean()
-			# self.plot_velocity_histogram()
-			# self.plot_predictions()
-			tqdm_dict = {'loss': loss, 'Angle': angle, 'Dist': dist}
-			logs.update({'train/angle': angle, 'train/dist': dist})
-		else:
-			tqdm_dict = {'train_loss': loss}
-
-		return {'loss': loss, 'train/mse': loss, 'progress_bar': tqdm_dict, 'log': logs}
 
 	def configure_optimizers(self):
 		return torch.optim.Adam(self.parameters())
@@ -321,16 +309,16 @@ class Model(LightningModule):
 			self.predict_sequentially()
 
 
-hparams = HParamParser(logname='MD', logger=False, plot=True,
+hparams = HParamParser(logname='MD', logger=False, plot=False,
 		       model='lstm',
-		       data_set='keto_1fs.npz', input_length=3, output_length=20,
-		       train_traj_repetition=1, pct_data_set=0.001)
+		       data_set='toluene_dft.npz', input_length=3, output_length=5,
+		       train_traj_repetition=1, pct_data_set=0.01)
 hparams.__dict__.update({'logname': hparams.logname + '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.model) + '_' + str(hparams.data_set) + '_T' + str(hparams.output_length)})
 
 dm = load_dm_data(hparams)
 print(dm)
 
-exit()
+# exit()
 
 scaling = {'y_mu': dm.y_mu, 'y_std': dm.y_std, 'dy_mu': dm.dy_mu, 'dy_std': dm.y_std}
 hparams.__dict__.update({'in_features': dm.y_mu.shape[-1]})
@@ -350,9 +338,9 @@ if hparams.logger is True:
 	hparams.__dict__.update({'logger': logger})
 
 early_stop_callback = EarlyStopping(
-	monitor='val/mse',
+	monitor='Val/MSE',
 	min_delta=0.00,
-	patience=3,
+	patience=1,
 	verbose=True,
 	mode='min',
 
@@ -360,19 +348,20 @@ early_stop_callback = EarlyStopping(
 
 # most basic trainer, uses good defaults
 trainer_ = Trainer()
-trainer = Trainer.from_argparse_args(hparams,
-				     max_epochs=2000,
-				     min_steps=5000,
-				     # max_steps=50,
-				     progress_bar_refresh_rate=5,
-				     early_stop_callback=early_stop_callback,
-				     # limit_train_batches=10,
-				     # limit_val_batches=10,
+trainer = Trainer.from_argparse_args(	hparams,
+				     	max_epochs=2000,
+					min_epochs=10,
+				     	# min_steps=1000,
+				     	# max_steps=50,
+				     	progress_bar_refresh_rate=5,
+				     	callbacks=[early_stop_callback],
+				     	# limit_train_batches=10,
+				     	# limit_val_batches=10,
 					val_check_interval=1.,
-				     fast_dev_run=False,
-				     checkpoint_callback=False,
-				     gpus=hparams.gpus
-				     )
+				     	fast_dev_run=False,
+				     	checkpoint_callback=False,
+				     	gpus=hparams.gpus
+				     	)
 # checkpoint = torch.load('Animation.ckpt')
 
 # trainer.on_save_checkpoint('checkpoints.epoch=14_v0.ckpt')
