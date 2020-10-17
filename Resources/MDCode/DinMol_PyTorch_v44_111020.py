@@ -1,11 +1,15 @@
 import numpy as np
 import torch 
 from tqdm import tqdm
+import sys
 
-from Gupta_PyTorch import GuptaTorch
-from Gupta_PyTorch import AtomType as GuptaParamsDict
-from intengrators import VerletVelocity_Torch
-from intengrators import readxyz
+sys.path.append("../../..")  # MDCode -> resources -> PhD
+
+from MLMD.resources.MDCode.Gupta_PyTorch import GuptaTorch
+from MLMD.resources.MDCode.Gupta_PyTorch import AtomType as GuptaParamsDict
+from MLMD.resources.MDCode.intengrators import VerletVelocity_Torch
+from MLMD.resources.MDCode.intengrators import readxyz
+
 
 
 # ----------- Initialize PyTorch ----------------
@@ -31,6 +35,7 @@ print('Using device:',device)
 n_atms, AtmTyp, X0 = readxyz("coord_ini.xyz")#Au55-ICO-ang.equil.ase.xyz")
 # initial velocities
 n_atms, AtmTyp, V0 = readxyz("vel_ini.xyz")
+V0 = torch.zeros_like(X0)
 print("Coords and velocities read.")
 print("Number of atoms:", n_atms)
 

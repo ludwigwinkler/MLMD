@@ -1,8 +1,11 @@
+import os, sys
 import argparse
 import numpy as np
 import matplotlib, warnings
 import torch
-from Utils.Utils import str2bool
+
+sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
+from src.MD_Utils import str2bool
 
 matplotlib.rcParams["figure.figsize"] = [10, 10]
 
@@ -28,7 +31,11 @@ def HParamParser(	logger=False,
 			num_layers=5,
 			input_length=3,
 			output_length=5,
+			output_length_train=None,
+			output_length_val=None,
+			output_length_sampling=False,
 			verbose=True,
+			criterion=['T', 't'][0]
 		 ):
 	if ('ode' in model or 'hamiltonian' in model) and input_length != 1:
 		input_length = 1
@@ -73,8 +80,6 @@ def HParamParser(	logger=False,
 			     default=data_set)
 	hparams.add_argument('-pct_data_set', type=float, default=pct_data_set)
 	hparams.add_argument('-subsampling', type=int, default=subsampling)
-	# hparams.add_argument('-num_samples', type=int, default=num_train_samples,
-	# 		     help="Entire dataset: -1, First k samples: k e.g. '-num_samples 1000' gives you the first 1000 samples of the train data set")
 
 	hparams.add_argument('-num_hidden', type=int, default=num_hidden)
 	hparams.add_argument('-num_layers', type=int, default=num_layers)
@@ -82,7 +87,12 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-batch_size', type=int, default=200)
 	hparams.add_argument('-train_traj_repetition', type=int, default=train_traj_repetition)
 	hparams.add_argument('-input_length', type=int, default=input_length)
-	hparams.add_argument('-output_length', type=int, default=output_length)
+
+	hparams.add_argument('-output_length_train', type=int, default=output_length if output_length_train is None else output_length_train)
+	hparams.add_argument('-output_length_val', type=int, default=output_length if output_length_val is None else output_length_val)
+	hparams.add_argument('-output_length_sampling', type=str2bool, default=output_length_sampling)
+
+	hparams.add_argument('-criterion', type=str, default=criterion)
 
 	hparams.add_argument('-plots_per_training', type=int, default=20)
 	hparams.add_argument('-val_split', type=float,
@@ -97,6 +107,6 @@ def HParamParser(	logger=False,
 	if 'ode' in hparams.model or 'hamiltonian' in hparams.model:
 		if hparams.input_length !=1:
 			print(f"Input length for {model} was {input_length}, changed to 1")
-			hparams.inpupt_length =1
+			hparams.input_length =1
 
 	return hparams

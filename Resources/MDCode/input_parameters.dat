@@ -1,0 +1,4 @@
+dt(fs)  Npas   M_esc   beta    gamma0
+ 2.0    100000   50    0.0      1.02
+coord   velocidad   distancias   promedios;  1=Si,0=No 
+  1          1           0           1

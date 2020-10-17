@@ -22,16 +22,19 @@ plt.rcParams.update(params)
 Tensor = torch.Tensor
 FloatTensor = torch.FloatTensor
 
+# This is a test
+
 torch.set_printoptions(precision=5, sci_mode=False)
 np.set_printoptions(precision=5, suppress=True)
 
-sys.path.append("../..")  # experiments -> MLMD -> PHD
+sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
+sys.path.append("/".join(os.getcwd().split("/")[:-2])) # experiments -> MLMD -> PHD
+# sys.path.append(os.getcwd())
+print(sys.path[-1])
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 cwd = os.path.abspath(os.getcwd())
-os.chdir(cwd)
-
-from MLMD.src.MD_Geometry import Atom
+# os.chdir(cwd)
 
 from pytorch_lightning import LightningModule
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -41,10 +44,11 @@ import wandb
 
 # seed_everything(0)
 
-from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM
-from MLMD.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
-from MLMD.src.MD_HyperparameterParser import HParamParser
-from MLMD.src.MD_DataUtils import load_data, load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
+from src.MD_Geometry import Atom
+from src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM
+from src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
+from src.MD_HyperparameterParser import HParamParser
+from src.MD_DataUtils import load_data, load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
 	Sequential_BiDirectional_TimeSeries_DataSet
 
 
@@ -84,11 +88,8 @@ class Model(LightningModule):
 		batch_y0, batch_t, batch_y = batch
 		batch_pred = self.forward(batch_t[0], batch_y0)
 
-		# batch_loss = F.mse_loss(batch_pred, batch_y)
-		# batch_loss = F.l1_loss(batch_pred, batch_y)
-		# print(batch_pred.shape)
-		# exit()
-		batch_loss = (batch_pred - batch_y).abs().sum(dim=1).mean()
+		batch_loss = self.model.criterion(batch_pred, batch_y)
+		# batch_loss = (batch_pred - batch_y).abs().sum(dim=1).mean()
 
 		self.log('t', batch_t[0], prog_bar=True)
 		self.log('Train/MSE', batch_loss, prog_bar=True)
@@ -110,7 +111,8 @@ class Model(LightningModule):
 		batch_y0, batch_t, batch_y = batch
 
 		batch_pred = self.forward(batch_t[0], batch_y0)
-		batch_loss = (batch_pred - batch_y).abs().sum(dim=1).mean()
+
+		batch_loss = self.model.criterion(batch_pred, batch_y)
 
 		# self.log('Val/MSE', batch_loss, prog_bar=True)
 
@@ -218,37 +220,37 @@ class Model(LightningModule):
 	@torch.no_grad()
 	def predict_sequentially(self, dm=None):
 		if dm is None:
-			data_train = self.trainer.datamodule.val_dataloader().dataset.data
+			data_val = self.trainer.datamodule.val_dataloader().dataset.data
 		elif dm is not None:
-			data_train = dm.val_dataloader().dataset.data
-		assert data_train.dim() == 3
+			data_val = dm.val_dataloader().dataset.data
+		assert data_val.dim() == 3
 		num_sequential_samples = 1000
 		if 'bi' in self.hparams.model:
-			data_set = Sequential_BiDirectional_TimeSeries_DataSet(data_train, input_length=self.hparams.input_length,
-									       output_length=self.hparams.output_length)
+			data_set = Sequential_BiDirectional_TimeSeries_DataSet(data_val, input_length=self.hparams.input_length,
+									       output_length_val=self.hparams.output_length_val)
 			dataloader = DataLoader(data_set, batch_size=11,
 						sampler=torch.utils.data.SequentialSampler(data_set.data))
 			t_y0 = []
-			segments = num_sequential_samples // (2 * self.hparams.input_length + self.hparams.output_length)
+			segments = num_sequential_samples // (2 * self.hparams.input_length + self.hparams.output_length_val)
 			input_length_ = np.tile(np.arange(0, self.hparams.input_length), segments)
 
 			# print(input_length_)
-			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length),self.hparams.input_length)
+			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val),self.hparams.input_length)
 			if self.hparams.input_length == 1:  # I don't know why played around and it finally looked ok
-				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length-1),self.hparams.input_length)
+				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val-1),self.hparams.input_length)
 			t_y0 = input_length_ + segment_offset
 
 		else:
-			data_set = Sequential_TimeSeries_DataSet(data_train, input_length=self.hparams.input_length,
-								 output_length=self.hparams.output_length)
+			data_set = Sequential_TimeSeries_DataSet(data_val, input_length=self.hparams.input_length,
+								 output_length=self.hparams.output_length_val)
 			dataloader = DataLoader(data_set, batch_size=11,
 						sampler=torch.utils.data.SequentialSampler(data_set.data))
-			segments = num_sequential_samples // (self.hparams.input_length + self.hparams.output_length)
+			segments = num_sequential_samples // (self.hparams.input_length + self.hparams.output_length_val)
 
 			input_length_ = np.tile(np.arange(0, self.hparams.input_length), segments)
-			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length),self.hparams.input_length)
+			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val),self.hparams.input_length)
 			if self.hparams.input_length == 1: # I don't know why played around and it finally looked ok
-				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length-1),self.hparams.input_length)
+				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val-1),self.hparams.input_length)
 			t_y0 = input_length_ + segment_offset
 
 		y_ = []
@@ -310,10 +312,10 @@ class Model(LightningModule):
 
 
 hparams = HParamParser(logname='MD', logger=False, plot=False,
-		       model='lstm',
-		       data_set='toluene_dft.npz', input_length=3, output_length=5,
-		       train_traj_repetition=1, pct_data_set=0.01)
-hparams.__dict__.update({'logname': hparams.logname + '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.model) + '_' + str(hparams.data_set) + '_T' + str(hparams.output_length)})
+		       model='lstm', data_set='toluene_dft.npz',
+		       input_length=3, output_length=20,
+		       train_traj_repetition=1, pct_data_set=1.)
+hparams.__dict__.update({'logname': hparams.logname + '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.model) + '_' + str(hparams.data_set) + '_T' + str(hparams.output_length_val)})
 
 dm = load_dm_data(hparams)
 print(dm)
@@ -340,7 +342,7 @@ if hparams.logger is True:
 early_stop_callback = EarlyStopping(
 	monitor='Val/MSE',
 	min_delta=0.00,
-	patience=1,
+	patience=3,
 	verbose=True,
 	mode='min',
 

@@ -24,12 +24,23 @@ This module contains all routines for the integrator.
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
+
 import numpy as np
 import torch 
 import torch.nn as nn
 from tqdm import tqdm
-from Gupta_PyTorch import GuptaTorch
-from Gupta_PyTorch import AtomType as GuptaParamsDict
+import sys
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available(): torch.set_default_tensor_type(torch.cuda.DoubleTensor)
+else:
+    torch.set_default_tensor_type(torch.DoubleTensor)
+
+sys.path.append("../../..")  # MDCode -> resources -> PhD (each .. is a arrow)
+
+from MLMD.resources.MDCode.Gupta_PyTorch import GuptaTorch
+from MLMD.resources.MDCode.Gupta_PyTorch import AtomType as GuptaParamsDict
 
 #!##########################################################################
 #! Parametros de ambiente
@@ -175,5 +186,5 @@ def readxyz(filename):
         coordinates.append(float(y))
         coordinates.append(float(z))
     xyz.close()
-    return n_atoms, atoms, torch.cuda.DoubleTensor(coordinates)
+    return n_atoms, atoms, torch.tensor(coordinates)
 #! ----------------------------------------

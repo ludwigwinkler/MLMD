@@ -124,23 +124,23 @@ class QuantumMachine_DFT(LightningDataModule):
 		if 'bi' in self.hparams.model:
 			self.data_train = BiDirectional_TimeSeries_DataSet(data=data_train,
 									   input_length=self.hparams.input_length,
-									   output_length=self.hparams.output_length,
+									   output_length=self.hparams.output_length_train,
 									   traj_repetition=self.hparams.train_traj_repetition,
 									   sample_axis='timesteps')
 			self.data_val = BiDirectional_TimeSeries_DataSet(data=data_val,
 									 input_length=self.hparams.input_length,
-									 output_length=self.hparams.output_length,
+									 output_length=self.hparams.output_length_val,
 									 traj_repetition=self.hparams.train_traj_repetition,
 									 sample_axis='timesteps')
 
 		else:  # the unidirectional case
 			self.data_train = TimeSeries_DataSet(data=data_train,
 							     input_length=self.hparams.input_length,
-							     output_length=self.hparams.output_length,
+							     output_length=self.hparams.output_length_train,
 							     traj_repetition=self.hparams.train_traj_repetition)
 			self.data_val = TimeSeries_DataSet(data=data_val,
 							   input_length=self.hparams.input_length,
-							   output_length=self.hparams.output_length,
+							   output_length=self.hparams.output_length_val,
 							   traj_repetition=self.hparams.train_traj_repetition)
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
@@ -225,23 +225,23 @@ class Keto_DFT(LightningDataModule):
 		if 'bi' in self.hparams.model:
 			self.data_train = BiDirectional_TimeSeries_DataSet(data=data_train,
 									   input_length=self.hparams.input_length,
-									   output_length=self.hparams.output_length,
+									   output_length=self.hparams.output_length_train,
 									   traj_repetition=self.hparams.train_traj_repetition,
 									   sample_axis='timesteps')
 			self.data_val = BiDirectional_TimeSeries_DataSet(data=data_val,
 									 input_length=self.hparams.input_length,
-									 output_length=self.hparams.output_length,
+									 output_length=self.hparams.output_length_val,
 									 traj_repetition=self.hparams.train_traj_repetition,
 									 sample_axis='timesteps')
 
 		else:  # the unidirectional case
 			self.data_train = TimeSeries_DataSet(data=data_train,
 							     input_length=self.hparams.input_length,
-							     output_length=self.hparams.output_length,
+							     output_length=self.hparams.output_length_train,
 							     traj_repetition=self.hparams.train_traj_repetition)
 			self.data_val = TimeSeries_DataSet(data=data_val,
 							   input_length=self.hparams.input_length,
-							   output_length=self.hparams.output_length,
+							   output_length=self.hparams.output_length_val,
 							   traj_repetition=self.hparams.train_traj_repetition)
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:

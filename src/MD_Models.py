@@ -1,4 +1,4 @@
-import sys
+import sys, os
 
 import matplotlib
 
@@ -14,11 +14,11 @@ from torchdiffeq import odeint_adjoint as odeint
 
 Tensor = torch.Tensor
 
-sys.path.append("../../..")
+sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
 
-from DiffEqNets.DiffEqNets_ModelUtils import IntegratorWrapper
-from DiffEqNets.DiffEqNets_ModelUtils import ODEWrapper, ODE2Wrapper, FirstOrderPDWrapper, SecOrderPDWrapper, HamiltonianWrapper
-from DiffEqNets.DiffEqNets_ModelUtils import apply_rescaling, ForwardHook, ForwardPreHook
+from src.DiffEqNets_ModelUtils import IntegratorWrapper
+from src.DiffEqNets_ModelUtils import ODEWrapper, ODE2Wrapper, FirstOrderPDWrapper, SecOrderPDWrapper, HamiltonianWrapper
+from src.DiffEqNets_ModelUtils import apply_rescaling, ForwardHook, ForwardPreHook
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -30,24 +30,25 @@ class MD_Model:
 
 	def criterion(self, _pred, _target):
 
-		assert _pred.shape==_target.shape
+		assert _pred.shape==_target.shape, f' {_pred.shape=} VS {_target.shape=}'
 		assert torch.sum(_pred[:,0]- _target[:,0])==0, f" y0's aren't the same"
 
-		return F.mse_loss(_pred, _target)#*_pred.shape[1]
+		if self.hparams.criterion=='T':
+			return F.mse_loss(_pred[:,-1], _target[:,-1])
+		elif self.hparams.criterion=='t':
+			return F.mse_loss(_pred, _target)
+		else:
+			raise Exception(f'Wrong Criterion chosen: {self.hparams.criterion}')
 
 class MD_BiModel:
 
 	def __init__(self, hparams):
-		# if hparams.lr <= 0:
-		# 	self.optim = torch.optim.Adam(self.parameters())
-		# elif hparams.lr > 0:
-		# 	self.optim = torch.optim.Adam(self.parameters(), lr=hparams.lr)
-		pass
+
+		self.hparams = hparams
 
 	def criterion(self, _pred, _target):
 		assert _pred.shape == _target.shape, f'{_pred.shape=} {_target.shape=}'
 		assert torch.sum(_pred[:, 0] - _target[:, 0]) == 0, f" y[0] aren't the same"
-		# assert torch.sum(_pred[:, -1] - _target[:, -1]) == 0, f" y[-1]'s aren't the same"
 
 		return F.mse_loss(_pred, _target)  # *_pred.shape[1]
 
@@ -69,11 +70,6 @@ class MD_BiDirectional_RNN(Module, MD_BiModel):
 
 		MD_BiModel.__init__(self, hparams)
 
-	def criterion(self, _pred, _target):
-
-		# assert torch.sum(torch.abs(_pred[:, 0] - _target[:, 0])) == 0, f" y0's aren't the same"
-
-		return F.mse_loss(_pred, _target)  # *_pred.shape[1]
 
 	def forward(self, t, x):
 
@@ -171,12 +167,6 @@ class MD_BiDirectional_LSTM(Module, MD_BiModel):
 		self.dy_std = scaling['dy_std']
 
 		MD_BiModel.__init__(self, hparams)
-
-	def criterion(self, _pred, _target):
-
-		# assert torch.sum(torch.abs(_pred[:, 0] - _target[:, 0])) == 0, f" y0's aren't the same"
-
-		return F.mse_loss(_pred, _target)  # *_pred.shape[1]
 
 	def forward(self, t, x):
 
