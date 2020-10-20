@@ -15,10 +15,11 @@ from torchdiffeq import odeint_adjoint as odeint
 Tensor = torch.Tensor
 
 sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
+sys.path.append("/".join(os.getcwd().split("/")[:-2])) # experiments -> MLMD -> PhD
 
-from src.DiffEqNets_ModelUtils import IntegratorWrapper
-from src.DiffEqNets_ModelUtils import ODEWrapper, ODE2Wrapper, FirstOrderPDWrapper, SecOrderPDWrapper, HamiltonianWrapper
-from src.DiffEqNets_ModelUtils import apply_rescaling, ForwardHook, ForwardPreHook
+from MLMD.src.MD_ModelUtils import IntegratorWrapper
+from MLMD.src.MD_ModelUtils import ODEWrapper, ODE2Wrapper, FirstOrderPDWrapper, SecOrderPDWrapper, HamiltonianWrapper
+from MLMD.src.MD_ModelUtils import apply_rescaling, ForwardHook, ForwardPreHook
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -49,8 +50,18 @@ class MD_BiModel:
 	def criterion(self, _pred, _target):
 		assert _pred.shape == _target.shape, f'{_pred.shape=} {_target.shape=}'
 		assert torch.sum(_pred[:, 0] - _target[:, 0]) == 0, f" y[0] aren't the same"
+		assert torch.sum(_pred[:, -1] - _target[:, -1]) == 0, f" y[-1] aren't the same"
 
-		return F.mse_loss(_pred, _target)  # *_pred.shape[1]
+		if self.hparams.criterion == 'T':
+			in_length, out_length = self.hparams.input_length, self.hparams.output_length_train
+			total_length = out_length + 2 * in_length
+			''' Two entries if total output length is even and one if its odd'''
+			T = range(total_length//2-1, total_length//2+1) if total_length % 2 == 0 else total_length//2
+			return F.mse_loss(_pred[:, T], _target[:, T])
+		elif self.hparams.criterion == 't':
+			return F.mse_loss(_pred, _target)
+		else:
+			raise Exception(f'Wrong Criterion chosen: {self.hparams.criterion}')
 
 class MD_BiDirectional_RNN(Module, MD_BiModel):
 

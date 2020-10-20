@@ -5,7 +5,7 @@ import matplotlib, warnings
 import torch
 
 sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
-from src.MD_Utils import str2bool
+from MLMD.src.MD_Utils import str2bool
 
 matplotlib.rcParams["figure.figsize"] = [10, 10]
 
@@ -19,9 +19,11 @@ np.set_printoptions(precision=4, suppress=True)
 def HParamParser(	logger=False,
 			logname='experiment',
 			logdir='experimentdir',
-			data_set=['ethanol_dft.npz', 'benzene_dft.npz', 'malonaldehyde_dft.npz', 'uracil_dft.npz',
-				    'lorenz', 'hmc',
-				    'keto_1fs.npz', 'keto_0.2fs.npz'][-1],
+			data_set=[	'ethanol_dft.npz', 'benzene_dft.npz', 'malonaldehyde_dft.npz', 'uracil_dft.npz',
+					'lorenz', 'hmc',
+					'keto_100K_0.2fs.npz',
+				    	'keto_300K_1.0fs.npz', 'keto_300K_0.2fs.npz',
+					'keto_500K_0.2fs.npz'][-1],
 			model='lstm',
 			subsampling=-1,
 			train_traj_repetition=1,
@@ -31,9 +33,9 @@ def HParamParser(	logger=False,
 			num_layers=5,
 			input_length=3,
 			output_length=5,
-			output_length_train=None,
-			output_length_val=None,
-			output_length_sampling=False,
+			output_length_train=-1,
+			output_length_val=-1,
+			output_length_sampling=True,
 			verbose=True,
 			criterion=['T', 't'][0]
 		 ):
@@ -75,8 +77,9 @@ def HParamParser(	logger=False,
 							       	'H2O/LowerEnergy/H2O_LowerEnergy1.npz',
 							       	'hmc',
 							       	'lorenz',
-							       	'keto_1fs.npz',
-							       	'keto_0.2fs.npz'],
+							       	'keto_100K_0.2fs.npz',
+							       	'keto_300K_0.2fs.npz','keto_300K_1.0fs.npz',
+								'keto_500K_0.2fs.npz',],
 			     default=data_set)
 	hparams.add_argument('-pct_data_set', type=float, default=pct_data_set)
 	hparams.add_argument('-subsampling', type=int, default=subsampling)
@@ -88,8 +91,9 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-train_traj_repetition', type=int, default=train_traj_repetition)
 	hparams.add_argument('-input_length', type=int, default=input_length)
 
-	hparams.add_argument('-output_length_train', type=int, default=output_length if output_length_train is None else output_length_train)
-	hparams.add_argument('-output_length_val', type=int, default=output_length if output_length_val is None else output_length_val)
+	hparams.add_argument('-output_length', 		type=int, default=output_length)
+	hparams.add_argument('-output_length_train', 	type=int, default=output_length_train)
+	hparams.add_argument('-output_length_val', 	type=int, default=output_length_val)
 	hparams.add_argument('-output_length_sampling', type=str2bool, default=output_length_sampling)
 
 	hparams.add_argument('-criterion', type=str, default=criterion)
@@ -104,9 +108,16 @@ def HParamParser(	logger=False,
 
 	hparams = hparams.parse_args()
 
+	hparams.output_length_train = hparams.output_length if hparams.output_length_train == -1 else hparams.output_length_train
+	hparams.output_length_val = hparams.output_length if hparams.output_length_val == -1 else hparams.output_length_val
+
 	if 'ode' in hparams.model or 'hamiltonian' in hparams.model:
 		if hparams.input_length !=1:
 			print(f"Input length for {model} was {input_length}, changed to 1")
 			hparams.input_length =1
+
+	assert hparams.output_length >= 1
+	assert hparams.output_length_train >= 1
+	assert hparams.output_length_val >= 1
 
 	return hparams
