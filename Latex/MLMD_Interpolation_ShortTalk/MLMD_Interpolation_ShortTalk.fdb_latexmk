@@ -1,5 +1,5 @@
 # Fdb version 3
-["pdflatex"] 1603319115 "MLMD_Interpolation_ShortTalk.tex" "MLMD_Interpolation_ShortTalk.pdf" "MLMD_Interpolation_ShortTalk" 1603319125
+["pdflatex"] 1603320750 "MLMD_Interpolation_ShortTalk.tex" "MLMD_Interpolation_ShortTalk.pdf" "MLMD_Interpolation_ShortTalk" 1603320752
   "/usr/local/texlive/2018/texmf-dist/fonts/map/fontname/texfonts.map" 1511824771 3332 103109f5612ad95229751940c61aada0 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy6.tfm" 1480098698 1124 14ccf5552bc7f77ca02a8a402bea8bfb ""
   "/usr/local/texlive/2018/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy8.tfm" 1480098698 1120 200be8b775682cdf80acad4be5ef57e4 ""
@@ -294,17 +294,17 @@
   "/usr/local/texlive/2018/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1523934492 2717033 f61a5287d9c22a39a74f1979fe3f905c ""
   "/usr/local/texlive/2018/texmf-var/web2c/pdftex/pdflatex.fmt" 1542146692 4220281 f36cc5d90ce67d316722720ecb296683 ""
   "/usr/local/texlive/2018/texmf.cnf" 1523934483 577 0b39adfd7c93507ff20c9c14c2f1a33f ""
-  "MLMD_Interpolation_ShortTalk.aux" 1603319117 1774 eede5bdb8181af1d3192aa26374dc1d4 ""
-  "MLMD_Interpolation_ShortTalk.nav" 1603319117 747 0e276c0940a342ad38699132b0e9aa8d ""
-  "MLMD_Interpolation_ShortTalk.out" 1603319116 0 d41d8cd98f00b204e9800998ecf8427e ""
-  "MLMD_Interpolation_ShortTalk.tex" 1603319124 8027 9d82fba17b4356e279af67227b44f58e ""
+  "MLMD_Interpolation_ShortTalk.aux" 1603320752 1774 eede5bdb8181af1d3192aa26374dc1d4 ""
+  "MLMD_Interpolation_ShortTalk.nav" 1603320752 747 0e276c0940a342ad38699132b0e9aa8d ""
+  "MLMD_Interpolation_ShortTalk.out" 1603320751 0 d41d8cd98f00b204e9800998ecf8427e ""
+  "MLMD_Interpolation_ShortTalk.tex" 1603320749 8027 9d82fba17b4356e279af67227b44f58e ""
   "figures/ExampleTrajectory.png" 1603318545 191192 3b94b85f40adfee1f817c6ccc5f49a54 ""
-  "figures/ExampleTrajectoryBi.png" 1603319054 158952 c042c16c62923d41b01bd846eab3bf30 ""
+  "figures/ExampleTrajectoryBi.png" 1603320645 156164 9117bc784f0bd52e12efb2752b369996 ""
   (generated)
-  "MLMD_Interpolation_ShortTalk.aux"
+  "MLMD_Interpolation_ShortTalk.snm"
   "MLMD_Interpolation_ShortTalk.pdf"
   "MLMD_Interpolation_ShortTalk.nav"
-  "MLMD_Interpolation_ShortTalk.toc"
-  "MLMD_Interpolation_ShortTalk.snm"
-  "MLMD_Interpolation_ShortTalk.log"
   "MLMD_Interpolation_ShortTalk.out"
+  "MLMD_Interpolation_ShortTalk.log"
+  "MLMD_Interpolation_ShortTalk.toc"
+  "MLMD_Interpolation_ShortTalk.aux"

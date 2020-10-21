@@ -246,7 +246,8 @@ class MD_BiDirectional_LSTM(Module, MD_BiModel):
 
 		pred, (h, c) = self.lstm(x)
 		dx = self.out_emb(pred)
-		out = torch.cat([x[:, :1, :], x + dx], dim=1)
+		# out = torch.cat([x[:, :1, :], x + dx], dim=1)
+		out = torch.cat([x, x[:,-1:,:] + dx[:,-1:,:]], dim=1)
 		for step in range(t - 1):  # because we add the first entry y0 at the beginning
 			pred_t, (h, c) = self.lstm(out[:, -1:], (h, c))
 			dx_t = self.out_emb(pred_t)
