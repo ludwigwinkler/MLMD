@@ -29,14 +29,17 @@ class MD_Model:
 
 		pass
 
-	def criterion(self, _pred, _target):
+	def criterion(self, _pred, _target, mode=None):
 
 		assert _pred.shape==_target.shape, f' {_pred.shape=} VS {_target.shape=}'
 		assert torch.sum(_pred[:,0]- _target[:,0])==0, f" y0's aren't the same"
 
-		if self.hparams.criterion=='T':
+		if mode is None:
+			mode = self.hparams.criterion
+
+		if mode=='T':
 			return F.mse_loss(_pred[:,-1], _target[:,-1])
-		elif self.hparams.criterion=='t':
+		elif mode=='t':
 			return F.mse_loss(_pred, _target)
 		else:
 			raise Exception(f'Wrong Criterion chosen: {self.hparams.criterion}')
@@ -47,18 +50,22 @@ class MD_BiModel:
 
 		self.hparams = hparams
 
-	def criterion(self, _pred, _target):
+	def criterion(self, _pred, _target, mode=None):
 		assert _pred.shape == _target.shape, f'{_pred.shape=} {_target.shape=}'
 		assert torch.sum(_pred[:, 0] - _target[:, 0]) == 0, f" y[0] aren't the same"
 		assert torch.sum(_pred[:, -1] - _target[:, -1]) == 0, f" y[-1] aren't the same"
 
-		if self.hparams.criterion == 'T':
+		if mode is None:
+			# only overwrite mode if its not given
+			mode = self.hparams.criterion
+
+		if mode == 'T':
 			in_length, out_length = self.hparams.input_length, self.hparams.output_length_train
 			total_length = out_length + 2 * in_length
 			''' Two entries if total output length is even and one if its odd'''
 			T = range(total_length//2-1, total_length//2+1) if total_length % 2 == 0 else total_length//2
 			return F.mse_loss(_pred[:, T], _target[:, T])
-		elif self.hparams.criterion == 't':
+		elif mode == 't':
 			return F.mse_loss(_pred, _target)
 		else:
 			raise Exception(f'Wrong Criterion chosen: {self.hparams.criterion}')
@@ -243,8 +250,8 @@ class MD_BiDirectional_LSTM(Module, MD_BiModel):
 		for step in range(t - 1):  # because we add the first entry y0 at the beginning
 			pred_t, (h, c) = self.lstm(out[:, -1:], (h, c))
 			dx_t = self.out_emb(pred_t)
-			# if self.dy_std is not None:
-			# 	dx_t = self.dy_std * dx_t
+			if self.dy_std is not None:
+				dx_t = self.dy_std * dx_t
 
 			out = torch.cat([out, out[:, -1:, :] + dx_t], dim=1)
 
@@ -561,15 +568,18 @@ class MD_LSTM(Module, MD_Model):
 
 		pred, (h,c) = self.lstm(x)
 		dx = self.out_emb(pred)
-
+		'''
+		[y_0 		y_1 		y_2] -> 
+		[y_0 		y_0 + dy_0	y_1+dy_1
+		'''
 		out = torch.cat([x[:, :1, :], x + dx], dim=1) if mode=='diff' else torch.cat([x[:, :1, :], dx], dim=1)
 		for step in range(t - 1):  # because we add the first entry y0 at the beginning
 			pred_t, (h,c) = self.lstm(out[:, -1:], (h,c))
 			dx_t = self.out_emb(pred_t)
 
 			if mode=='diff':
-				if self.dy_std is not None:
-					dx_t = self.dy_std * dx_t + self.dy_mu
+				# if self.dy_std is not None:
+				# 	dx_t = self.dy_std * dx_t + self.dy_mu
 
 				out = torch.cat([out, out[:, -1:, :] + dx_t], dim=1)
 			else:

@@ -106,8 +106,7 @@ class TimeSeries_DataSet(Dataset):
 				0]  # traj_repetition allows for "oversampling" of first dim -> restricting idx to original data shape
 			traj = self.data[idx]  # selecting trajectory
 
-			assert (traj.shape[
-					0] - total_length) >= 0, f' trajectory length {traj.shape[0]} is smaller than batch_length {self.batchlength}'
+			assert (traj.shape[0] - total_length) >= 0, f' trajectory length {traj.shape[0]} is larger than output {output_length}'
 			t0 = np.random.choice(traj.shape[0] - total_length)  # selecting starting time in trajectory
 
 		elif self.sample_axis == 'timesteps':
@@ -202,18 +201,16 @@ class BiDirectional_TimeSeries_DataSet(Dataset):
 		else:
 			output_length = self.output_length
 
-		total_length = output_length + self.input_length
+		total_length = output_length + 2*self.input_length
 
 		if self.sample_axis == 'trajs':
 			'''
 			Many short timeseries
 			'''
-			idx = idx % self.data.shape[
-				0]  # traj_repetition allows for "oversampling" of first dim -> restricting idx to original data shape
+			idx = idx % self.data.shape[0]  # traj_repetition allows for "oversampling" of first dim -> restricting idx to original data shape
 			traj = self.data[idx]  # selecting trajectory
 
-			assert (traj.shape[
-					0] - total_length) >= 0, f' trajectory length {traj.shape[0]} is smaller than batch_length {self.batchlength}'
+			assert (traj.shape[0] - total_length) >= 0, f' trajectory length {traj.shape[0]} is smaller than output_length {output_length}'
 			t0 = np.random.choice(traj.shape[0] - total_length)  # selecting starting time in trajectory
 			t1 = t0 + self.input_length + self.output_length
 
@@ -238,6 +235,10 @@ class BiDirectional_TimeSeries_DataSet(Dataset):
 
 		target = traj[t0:(t0 + total_length)]  # snippet of trajectory
 
+
+		assert y0.shape[0] == self.input_length
+		assert y1.shape[0] == self.input_length
+		assert target.shape[0] == total_length
 		assert F.mse_loss(y0, target[:self.input_length]) == 0, f'{F.mse_loss(y0, target[0])=}'
 		assert F.mse_loss(y1, target[-self.input_length:]) == 0, f'{F.mse_loss(y1[0], target[-1])=}'
 
@@ -265,7 +266,7 @@ class BiDirectional_TimeSeries_DataSet(Dataset):
 class Sequential_BiDirectional_TimeSeries_DataSet(Dataset):
 
 	def __init__(self, data, input_length=1, output_length=2, sample_axis=None):
-		assert data.dim() == 3, f'Data.dim()={data.dim()} and not [trajs, steps, features]'
+		assert data.dim() == 2, f'Data.dim()={data.dim()} and not [steps, features]'
 		assert type(input_length) == int
 		assert type(output_length) == int
 		assert input_length >= 1
@@ -276,22 +277,22 @@ class Sequential_BiDirectional_TimeSeries_DataSet(Dataset):
 
 		self.input_length = input_length
 		self.output_length = output_length
-		self.output_length_samplerange = [output_length, output_length + 1]
 
-		T = data.shape[1]
-		data = data[0]  # self.data_train.shape=(timeseries>1, t>1, F)
+		T = data.shape[0]
+		last_part = T % (input_length+output_length)
+		data = data[:(T-last_part)]
+		assert data.dim()==2, f'{data.shape=}'
 
-		# data_train = torch.stack(data.chunk(chunks=T // (2 * input_length + output_length-1), dim=0)[:-1])  # dropping the last, possibly wrong length time series sample
-		data_train = torch.stack(data.chunk(chunks=T // (input_length + output_length - 1), dim=0)[
-					 :-1])  # dropping the last, possibly wrong length time series sample
-		data_train = torch.cat([data_train[:-1], data_train[1:, :input_length]], dim=1)
+		data_ = torch.stack(data.chunk(chunks=T // (input_length + output_length), dim=0)[:-1])  # dropping the last, possibly wrong length time series sample
+		data_ = torch.cat([data_[:-1], data_[1:, :input_length]], dim=1)
 
-		# plt.plot(data_train[:3,:(-input_length),:3].flatten(0,1))
-		# plt.plot(data_train[:3,:,:3].flatten(0,1))
+		assert data_.shape[1] == (2*input_length + output_length), f"{data_.shape=}"
+		# plt.plot(data_[:3,:(-input_length),:3].flatten(0,1))
 		# plt.show()
+		assert F.mse_loss(data_[:3, :(-input_length)].flatten(0, 1), data[:(3*(input_length+output_length))])==0, f'Data was not properly processed into segments'
 		# exit()
 
-		self.data = data_train
+		self.data = data_
 
 	def __getitem__(self, idx):
 		'''
@@ -322,7 +323,7 @@ class Sequential_BiDirectional_TimeSeries_DataSet(Dataset):
 class Sequential_TimeSeries_DataSet(Dataset):
 
 	def __init__(self, data, input_length=1, output_length=2, sample_axis=None):
-		assert data.dim() == 3, f'Data.dim()={data.dim()} and not [trajs, steps, features]'
+		assert data.dim() == 2, f'Data.dim()={data.dim()} and not [steps, features]'
 		assert type(input_length) == int
 		assert type(output_length) == int
 		assert input_length >= 1
@@ -333,31 +334,38 @@ class Sequential_TimeSeries_DataSet(Dataset):
 
 		self.input_length = input_length
 		self.output_length = output_length
-		self.output_length_samplerange = [output_length, output_length + 1]
 
-		T = data.shape[1]
-		data = data[0]  # self.data_train.shape=(timeseries>1, t>1, F)
-		data_train = torch.stack(data.chunk(chunks=T // (input_length + output_length - 1), dim=0)[
-					 :-1])  # dropping the last, possibly wrong length time series sample
-		self.data = data_train
+		T = data.shape[0]
+		last_part = T % (input_length + output_length)
+		data = data[:(T - last_part)]
+		assert data.dim() == 2, f'{data.shape=}'
+
+		data_ = torch.stack(data.chunk(chunks=T // (input_length + output_length), dim=0)[:-1])  # dropping the last, possibly wrong length time series sample
+
+		assert data_.shape[1] == (input_length + output_length), f"{data_.shape=}"
+		# plt.plot(data_[:3,:(-input_length),:3].flatten(0,1))
+		# plt.show()
+		assert F.mse_loss(data_[:3].flatten(0, 1),
+				  data[:(3 * (input_length + output_length))]) == 0, f'Data was not properly processed into segments'
+		# exit()
+
+		self.data = data_
 
 	def __getitem__(self, idx):
+		'''
+		Many short timeseries
+		'''
+		idx = idx % self.data.shape[0]  # traj_repetition allows for "oversampling" of first dim -> restricting idx to original data shape
 		traj = self.data[idx]  # selecting trajectory
 
 		'''
-		y0 + input_length | output_length | y1 + input_length
+		y0 + input_length | output_length
 		'''
 
 		y0 = traj[:self.input_length]  # selecting corresponding starting point
 
 		target = traj  # snippet of trajectory
 		assert F.mse_loss(y0, target[:self.input_length]) == 0, f'{F.mse_loss(y0, target[0])=}'
-		# assert F.mse_loss(y1,target[-self.input_length:])==0, f'{F.mse_loss(y1[0], target[-1])=}'
-
-		# y0 = torch.cat([y0, y1], dim=0)
-
-		# if self.input_length == 1:
-		# 	y0.squeeze_(0)
 
 		return y0, self.output_length, target
 
@@ -399,7 +407,7 @@ class MD_DataSet(LightningDataModule):
 
 		self.sequential_sampling=False
 
-		print("MD_DataSet.__init__() executed")
+		# print("MD_DataSet.__init__() executed")
 
 	def prepare_data(self, *args, **kwargs):
 
@@ -442,11 +450,13 @@ class MD_DataSet(LightningDataModule):
 			self.data_train = BiDirectional_TimeSeries_DataSet(data=data_train,
 									   input_length=self.hparams.input_length,
 									   output_length=self.hparams.output_length_train,
+									   output_length_sampling=self.hparams.output_length_sampling,
 									   traj_repetition=self.hparams.train_traj_repetition,
 									   sample_axis='timesteps')
 			self.data_val = BiDirectional_TimeSeries_DataSet(data=data_val,
 									 input_length=self.hparams.input_length,
 									 output_length=self.hparams.output_length_val,
+									 output_length_sampling=self.hparams.output_length_sampling,
 									 traj_repetition=self.hparams.train_traj_repetition,
 									 sample_axis='timesteps')
 
@@ -454,10 +464,12 @@ class MD_DataSet(LightningDataModule):
 			self.data_train = TimeSeries_DataSet(data=data_train,
 							     input_length=self.hparams.input_length,
 							     output_length=self.hparams.output_length_train,
+							     output_length_sampling=self.hparams.output_length_sampling,
 							     traj_repetition=self.hparams.train_traj_repetition)
 			self.data_val = TimeSeries_DataSet(data=data_val,
 							   input_length=self.hparams.input_length,
 							   output_length=self.hparams.output_length_val,
+							   output_length_sampling=self.hparams.output_length_sampling,
 							   traj_repetition=self.hparams.train_traj_repetition)
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
@@ -512,7 +524,7 @@ class QuantumMachine_DFT(MD_DataSet):
 			self.data = torch.cat([pos, vel], dim=-1)
 			# torch.save(data, path_pt)
 
-class Keto_DFT(LightningDataModule):
+class Keto_DFT(MD_DataSet):
 
 	def __init__(self, hparams):
 
@@ -552,97 +564,24 @@ class Keto_DFT(LightningDataModule):
 
 		self.data = torch.cat([pos, vel], dim=-1)
 
-	def setup(self, stage: Optional[str] = None):
-
-		# data = torch.load(path_pt).float()
-		data = self.data
-		assert data.dim() == 3
-		assert data.shape[0] == 1
-
-		# plt.hist(data[:,:,data.shape[-1]//2], bins=100, density=True)
-		# plt.show()
-		self.data_mean = data.mean(dim=[0,1])
-		self.data_std = data.std(dim=[0,1])
-
-		data = (data - self.data_mean) / (self.data_std + 1e-8)
-
-		train_data_size = int(data.shape[1] * self.hparams.val_split * self.hparams.pct_data_set)
-		val_data_size = int(data.shape[1] - data.shape[1]*self.hparams.val_split)
-
-		val_split = int(data.shape[1] * self.hparams.val_split)
-		data_train = data[:, :int(val_split*self.hparams.pct_data_set)]
-		data_val = data[:, int(val_split * self.hparams.pct_data_set):int(val_split * self.hparams.pct_data_set+val_data_size)]
-
-		self.y_mu 	= data_train.data.mean(dim=[0, 1]).to(device)
-		self.y_std 	= data_train.data.std(dim=[0, 1]).to(device)
-
-		self.dy 	= (data_train.data[:, 2:, :] - data_train.data[:, :-2, :]) / 2
-		self.dy_mu 	= self.dy.mean(dim=[0, 1]).unsqueeze(0).to(device)  # shape = [bs, f]
-		self.dy_std 	= self.dy.std(dim=[0, 1]).unsqueeze(0).to(device)  # shape = [bs, f]
-
-		if 'bi' in self.hparams.model:
-			self.data_train = BiDirectional_TimeSeries_DataSet(data=data_train,
-									   input_length=self.hparams.input_length,
-									   output_length=self.hparams.output_length_train,
-									   output_length_sampling=self.hparams.output_length_sampling,
-									   traj_repetition=self.hparams.train_traj_repetition,
-									   sample_axis='timesteps')
-			self.data_val = BiDirectional_TimeSeries_DataSet(data=data_val,
-									 input_length=self.hparams.input_length,
-									 output_length=self.hparams.output_length_val,
-									 output_length_sampling=False, # only sample training data set
-									 traj_repetition=self.hparams.train_traj_repetition,
-									 sample_axis='timesteps')
-
-		else:  # the unidirectional case
-			self.data_train = TimeSeries_DataSet(data=data_train,
-							     input_length=self.hparams.input_length,
-							     output_length=self.hparams.output_length_train,
-							     output_length_sampling=self.hparams.output_length_sampling,
-							     traj_repetition=self.hparams.train_traj_repetition)
-			self.data_val = TimeSeries_DataSet(data=data_val,
-							   input_length=self.hparams.input_length,
-							   output_length=self.hparams.output_length_val,
-							   output_length_sampling=False, # only sample training data set
-							   traj_repetition=self.hparams.train_traj_repetition)
-
-	def train_dataloader(self, *args, **kwargs) -> DataLoader:
-
-		dataloader = DataLoader(self.data_train, batch_size=self.hparams.batch_size, shuffle=True, num_workers=self.hparams.num_workers)
-
-		return dataloader
-
-	def val_dataloader(self, *args, **kwargs) -> DataLoader:
-		return DataLoader(self.data_val, batch_size=self.hparams.batch_size*2, num_workers=self.hparams.num_workers)
-
-	def __len__(self):
-		self.prepare_data()
-		self.setup()
-		return self.data.shape[1]
-
-	@property
-	def shape(self):
-		return self.data.shape
-
-	def __repr__(self):
-		return f'{self.data_str}: {self.data.shape} features'
-
 class HMC_DM(LightningDataModule):
 
 	def __init__(self, hparams):
 
 		self.hparams = hparams
+		self.data_str = 'HMC'
 
 	def setup(self, *args, **kwargs):
 
-		from DiffEqNets.MolecularDynamics.data.HMC_Data_Generation import HMCData
+		# from DiffEqNets.MolecularDynamics.data.HMC_Data_Generation import HMCData
+		from MLMD.data.HMC_Data_Generation import HMCData
 
 		num_datasets = 1
-		num_trajectories = 2000
-		num_means = 10
+		num_trajectories = 5000
+		num_means = 5
 		trajectory_stepsize = 0.2
 		dist_mean_min_max = 4
-		num_steps = 100
+		num_steps = 800
 
 		means, covars, surfaces, trajectories = [], [], [], []
 		for i_dataset in range(num_datasets):
@@ -677,7 +616,7 @@ class HMC_DM(LightningDataModule):
 
 		assert data.dim() == 3
 
-		data = (data - data.mean(dim=[0, 1])) / (data.std(dim=[0, 1]) + 1e-3)
+		self.data = (data - data.mean(dim=[0, 1])) / (data.std(dim=[0, 1]) + 1e-3)
 
 		val_split = int(data.shape[1] * self.hparams.val_split)
 		data_train, data_val = data[:, :val_split], data[:, val_split:]
@@ -689,26 +628,27 @@ class HMC_DM(LightningDataModule):
 		self.dy_mu = self.dy.mean(dim=[0, 1]).unsqueeze(0).to(device)  # shape = [bs, f]
 		self.dy_std = self.dy.std(dim=[0, 1]).unsqueeze(0).to(device)  # shape = [bs, f]
 
+
 		if 'bi' in self.hparams.model:
 			self.data_train = BiDirectional_TimeSeries_DataSet(data=data_train,
 									   input_length=self.hparams.input_length,
-									   output_length=self.hparams.output_length,
+									   output_length=self.hparams.output_length_train,
 									   traj_repetition=self.hparams.train_traj_repetition,
 									   sample_axis='trajs')
 			self.data_val = BiDirectional_TimeSeries_DataSet(data=data_val,
 									 input_length=self.hparams.input_length,
-									 output_length=self.hparams.output_length,
+									 output_length=self.hparams.output_length_val,
 									 traj_repetition=self.hparams.train_traj_repetition,
 									 sample_axis='trajs')
 
 		else:  # the unidirectional case
 			self.data_train = TimeSeries_DataSet(data=data_train,
 							     input_length=self.hparams.input_length,
-							     output_length=self.hparams.output_length,
+							     output_length=self.hparams.output_length_train,
 							     traj_repetition=self.hparams.train_traj_repetition)
 			self.data_val = TimeSeries_DataSet(data=data_val,
 							   input_length=self.hparams.input_length,
-							   output_length=self.hparams.output_length,
+							   output_length=self.hparams.output_length_val,
 							   traj_repetition=self.hparams.train_traj_repetition)
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
@@ -717,6 +657,9 @@ class HMC_DM(LightningDataModule):
 
 	def val_dataloader(self, *args, **kwargs) -> DataLoader:
 		return DataLoader(self.data_val, batch_size=self.hparams.batch_size, shuffle=True)
+
+	def __repr__(self):
+		return f'{self.data_str}: {self.data.shape} features'
 
 def load_dm_data(hparams):
 	data_str = hparams.data_set
@@ -753,6 +696,8 @@ def load_dm_data(hparams):
 
 	dy_mu = dy.mean(dim=[0, 1]).unsqueeze(0)  # shape = [bs, f]
 	dy_std = dy.std(dim=[0, 1]).unsqueeze(0)  # shape = [bs, f]
+
+	print(dm)
 
 	return dm
 

@@ -14,11 +14,11 @@ wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5
 #for pct in 0.001 0.01 0.1 0.25 0.5 1.; do
 for pct in 1.; do
   for data in keto_100K_0.2fs.npz keto_300K_0.2fs.npz keto_500K_0.2fs.npz; do
-#  for data in keto_300K_0.2fs.npz; do
-    for criterion in T t; do
-#      for output_length in 5 10 20; do
-      for output_length in 20; do
-        python MLMD_Interpolation.py -pct_data_set $pct -model $1 -criterion $criterion -logger True -data_set $data -plot False -input_length 1 -output_length $output_length -num_hidden 500 -num_layers 5 -plot False
+    for output_length_train in 10 20 30; do
+      for output_length_val in 10 20 30; do
+        python MLMD_Interpolation.py -logger True -plot True -show False \
+          -pct_data_set $pct -model $1 -data_set $data \
+          -input_length 1 -output_length_train $output_length_train -output_length_val $output_length_val
       done
     done
   done

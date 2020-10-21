@@ -7,9 +7,9 @@
 #$ -o IO/output.txt
 
 for model in lstm bi_lstm; do
-  for output_length_train in 10 20; do
-    python MLMD_Interpolation.py -pct_data_set $pct -model $1 -criterion $criterion -logger True -data_set $data -plot False \
-    -input_length 1 -output_length_train $output_length -output_length_val 10 \
+  for output_length_train in 20 10; do
+    python MLMD_Interpolation.py -pct_data_set 1.0 -model $model -criterion T -logger False -plot True \
+    -input_length 1 -output_length_train $output_length_train -output_length_val 10 -output_length_sampling False\
     -num_hidden 500 -num_layers 5
   done
 done

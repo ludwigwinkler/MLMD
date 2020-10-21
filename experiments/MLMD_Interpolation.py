@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 
 fontsize = 20
 params = {'legend.fontsize': fontsize,
-	  ''
 	  # 'legend.handlelength': 2,
 	  # 'text.usetex': True}
 
@@ -41,8 +40,9 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning import Trainer, seed_everything
 import wandb
+from pytorch_lightning.loggers import WandbLogger
 
-# seed_everything(0)
+seed_everything(0)
 
 from MLMD.src.MD_Geometry import Atom
 from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM
@@ -57,6 +57,8 @@ class Model(LightningModule):
 	def __init__(self, scaling, **kwargs):
 		super().__init__()
 		self.save_hyperparameters()
+
+
 
 		if self.hparams.model == 'bi_rnn':
 			self.model = MD_BiDirectional_RNN(hparams=self.hparams, scaling=scaling)
@@ -88,10 +90,10 @@ class Model(LightningModule):
 		batch_y0, batch_t, batch_y = batch
 		batch_pred = self.forward(batch_t[0], batch_y0)
 
-		batch_loss = self.model.criterion(batch_pred, batch_y)
-		# batch_loss = (batch_pred - batch_y).abs().sum(dim=1).mean()
-
-		self.log('t', batch_t[0], prog_bar=True)
+		batch_loss = self.model.criterion(batch_pred, batch_y, mode='t')
+		
+		# print(batch_t[0])
+		self.log('Train/t', batch_t[0], prog_bar=True)
 		self.log('Train/MSE', batch_loss, prog_bar=True)
 
 		return {'loss': batch_loss, 'Train/MSE': batch_loss}
@@ -99,13 +101,7 @@ class Model(LightningModule):
 	def on_train_batch_end(self, outputs: Any, batch: Any, batch_idx: int, dataloader_idx: int) -> None:
 
 		if self.hparams.output_length_sampling:
-
 			self.trainer.train_dataloader.dataset.sample_output_length()
-			# print(f'{self.trainer.train_dataloader.dataset=}')
-			# print(f"{self.trainer.train_dataloader.dataset.sampled_output_length=}")
-
-
-			# exit(f"Exited @ {inspect.currentframe().f_code.co_name}")
 
 	def training_epoch_end(self, outputs):
 		val_loss = torch.stack([x['Train/MSE'] for x in outputs]).mean()
@@ -122,10 +118,7 @@ class Model(LightningModule):
 		batch_y0, batch_t, batch_y = batch
 
 		batch_pred = self.forward(batch_t[0], batch_y0)
-
-		batch_loss = self.model.criterion(batch_pred, batch_y)
-
-		# self.log('Val/MSE', batch_loss, prog_bar=True)
+		batch_loss = self.model.criterion(batch_pred, batch_y, mode='t')
 
 		if False and self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
 			batch_pred_angles, batch_pred_distances = Atom(batch_pred, hparams).compute_MD_geometry()
@@ -134,21 +127,15 @@ class Model(LightningModule):
 			batch_angle_loss = F.mse_loss(batch_pred_angles, batch_angles)
 			batch_distance_loss = F.mse_loss(batch_pred_distances, batch_distances)
 
-			# tqdm_dict.update({'Angle': batch_angle_loss, 'Dist': batch_distance_loss})
-			# output.update({'Angle': batch_angle_loss, 'Dist': batch_distance_loss})
-
-
-		return {'Val/MSE': batch_loss}
+		return {'Val/MSE': batch_loss, 'Val/t': batch_t[0]}
 
 	def validation_epoch_end(self, outputs):
 		val_loss = torch.stack([x['Val/MSE'] for x in outputs]).mean()
-		self.log('Val/MSE', val_loss, prog_bar=True)
+		self.log_dict({'Val/MSE':val_loss, 'Val/t': self.hparams.output_length_val}, prog_bar=True)
 
 		if False and self.hparams.data_set in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
 			angle = torch.stack([x['Angle'] for x in outputs]).mean()
 			dist = torch.stack([x['Dist'] for x in outputs]).mean()
-			# self.plot_velocity_histogram()
-			# self.plot_predictions()
 
 	def configure_optimizers(self):
 		return torch.optim.Adam(self.parameters())
@@ -229,38 +216,42 @@ class Model(LightningModule):
 
 	@torch.no_grad()
 	def predict_sequentially(self, dm=None):
+
+		# print("Plotting ...")
 		if dm is None:
 			data_val = self.trainer.datamodule.val_dataloader().dataset.data
 		elif dm is not None:
 			data_val = dm.val_dataloader().dataset.data
 		assert data_val.dim() == 3
-		num_sequential_samples = 1000
-		if 'bi' in self.hparams.model:
-			data_set = Sequential_BiDirectional_TimeSeries_DataSet(data_val, input_length=self.hparams.input_length,
-									       output_length_val=self.hparams.output_length_val)
-			dataloader = DataLoader(data_set, batch_size=11,
-						sampler=torch.utils.data.SequentialSampler(data_set.data))
-			t_y0 = []
-			segments = num_sequential_samples // (2 * self.hparams.input_length + self.hparams.output_length_val)
-			input_length_ = np.tile(np.arange(0, self.hparams.input_length), segments)
+		num_sequential_samples = np.min([200,data_val.shape[1]])
 
-			# print(input_length_)
-			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val),self.hparams.input_length)
+		if 'bi' in self.hparams.model:
+			data_set = Sequential_BiDirectional_TimeSeries_DataSet(data_val[0], input_length=self.hparams.input_length,
+									       output_length=self.hparams.output_length_val)
+
+			dataloader = DataLoader(data_set, batch_size=11,sampler=torch.utils.data.SequentialSampler(data_set.data))
+			'''Split num_sequential_samples into consecutive chunks of input_length + output_length, final conditions is actually start of next segment'''
+			segments = num_sequential_samples // (self.hparams.input_length + self.hparams.output_length_val)
+			input_length_ = np.tile(np.arange(0, self.hparams.input_length), segments) # [0,1,2,3, 0,1,2,3, 0,1,2,3] for input_length=4
+
+			# np.arange(0, segments=3) = [0,1,2]
+			# np.arange(0, segments=3) * (input_length(=2) + output_length(=4) + 1) = [0, 7, 13] || +1 moves it to the first entry of next segment
+			# finally repeat it for input_length such that every entry in the input length as its corresponding offset
+			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val), self.hparams.input_length)
 			if self.hparams.input_length == 1:  # I don't know why played around and it finally looked ok
-				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val-1),self.hparams.input_length)
+				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val), self.hparams.input_length)
 			t_y0 = input_length_ + segment_offset
 
 		else:
-			data_set = Sequential_TimeSeries_DataSet(data_val, input_length=self.hparams.input_length,
+			data_set = Sequential_TimeSeries_DataSet(data_val[0], input_length=self.hparams.input_length,
 								 output_length=self.hparams.output_length_val)
-			dataloader = DataLoader(data_set, batch_size=11,
-						sampler=torch.utils.data.SequentialSampler(data_set.data))
+			dataloader = DataLoader(data_set, batch_size=11,sampler=torch.utils.data.SequentialSampler(data_set.data))
 			segments = num_sequential_samples // (self.hparams.input_length + self.hparams.output_length_val)
 
 			input_length_ = np.tile(np.arange(0, self.hparams.input_length), segments)
 			segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val),self.hparams.input_length)
 			if self.hparams.input_length == 1: # I don't know why played around and it finally looked ok
-				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val-1),self.hparams.input_length)
+				segment_offset = np.repeat(np.arange(0, segments) * (self.hparams.input_length + self.hparams.output_length_val),self.hparams.input_length)
 			t_y0 = input_length_ + segment_offset
 
 		y_ = []
@@ -272,6 +263,7 @@ class Model(LightningModule):
 			self.model.to(device)
 
 			batch_pred = self.forward(t[0], y0)
+
 			if 'bi' in self.hparams.model:
 				pred_.append(batch_pred[:, :-self.hparams.input_length].flatten(0, 1))
 				y_.append(y[:, :-self.hparams.input_length].flatten(0, 1))
@@ -279,25 +271,16 @@ class Model(LightningModule):
 				pred_.append(batch_pred.flatten(0, 1))
 				y_.append(y.flatten(0, 1))
 			y0_.append(y0[:, :(self.hparams.input_length)].flatten(0, 1))
-		pred = torch.cat(pred_, dim=0).cpu().detach().numpy()
-		ys = torch.cat(y_, dim=0).cpu().detach().numpy()
-		y0s = torch.cat(y0_, dim=0).cpu().detach().numpy()
+		pred = torch.cat(pred_, dim=0).cpu().detach()
+		ys = torch.cat(y_, dim=0).cpu().detach()
+		y0s = torch.cat(y0_, dim=0).cpu().detach()
 
-		# ys = ys*dm.data_std + dm.data_mean
-		# pred = pred*dm.data_std + dm.data_mean
-		# y0s = y0s*dm.data_std + dm.data_mean
-
-		# print(ys.mean(dim=[0])-dm.data_mean)
-
-		# plt.title('animation')
-		# plt.hist(ys[:,:,ys.shape[-1]//2], bins=100, density=True)
-		# plt.show()
-
-		torch.save(pred, 'AnimationPred.pt')
-		torch.save(ys, 'AnimationTrue.pt')
-		torch.save(y0s, 'AnimationConditions.pt')
+		assert F.mse_loss(ys, data_val[0,:ys.shape[0]])==0
 
 		colors=['r', 'g', 'b']
+
+		fig = plt.figure(figsize=(20,10))
+		plt.grid()
 
 		plt.plot(ys[:num_sequential_samples, 0], color=colors[0], label='Data')
 		plt.plot(ys[:num_sequential_samples, 1], color=colors[1])
@@ -306,53 +289,59 @@ class Model(LightningModule):
 		plt.plot(pred[:num_sequential_samples, 1], ls='--', color=colors[1])
 		plt.plot(pred[:num_sequential_samples, 2], ls='--', color=colors[2])
 
+		t_y0 = t_y0[:y0s.shape[0]]
+
+		plt.scatter(t_y0, y0s[:t_y0.shape[0], 0], color=colors[0], label='Initial and Final Conditions')
 		plt.scatter(t_y0, y0s[:t_y0.shape[0], 0], color=colors[0], label='Initial and Final Conditions')
 		plt.scatter(t_y0, y0s[:t_y0.shape[0], 1], color=colors[1], label='Initial and Final Conditions')
 		plt.scatter(t_y0, y0s[:t_y0.shape[0], 2], color=colors[2], label='Initial and Final Conditions')
 		plt.xlabel('t')
 		plt.ylabel('$q(t)$')
 		plt.title(self.hparams.data_set)
+		plt.xticks(np.arange(0,t_y0.max()))
+		plt.xlim(0, t_y0.max())
 		plt.legend()
-		plt.show()
+		if self.hparams.show: plt.show()
+
+		return fig
 
 	def on_fit_end(self):
 
+		self.log('Val/MSE', self.trainer.callbacks[0].best_score)
+
 		if self.hparams.plot:
-			self.predict_sequentially()
+			fig = self.predict_sequentially()
+			print(f"{type(self.logger)=}")
+			if isinstance(self.logger, WandbLogger):
+				print('Saving image ...')
+				self.logger.experiment.log({'Pred':wandb.Image(fig, caption="Val Prediction")})
 
+			del fig
 
-hparams = HParamParser(logname='MD', logger=False, plot=False,
-		       model='lstm', data_set='keto_100K_0.2fs.npz', criterion='T',
-		       input_length=3, output_length=10,
-		       train_traj_repetition=1, pct_data_set=1.)
-hparams.__dict__.update({'logname': hparams.logname+'_pct'+str(hparams.pct_data_set)+'_'+str(hparams.model)+'_'+str(hparams.data_set)+
-				    '_Ttrain'+str(hparams.output_length_train)+'_Tval'+str(hparams.output_length_val)})
+hparams = HParamParser(logname='MD', logger=False, show=True,
+		       model='bi_lstm', data_set=['toluene_dft.npz','hmc', 'keto_500K_0.2fs.npz'][1], criterion='t',
+		       input_length=3, output_length=20,
+		       output_length_train=21, output_length_val=21, output_length_sampling=False)
 
 dm = load_dm_data(hparams)
-print(dm)
 
-# exit()
 
 scaling = {'y_mu': dm.y_mu, 'y_std': dm.y_std, 'dy_mu': dm.dy_mu, 'dy_std': dm.y_std}
 hparams.__dict__.update({'in_features': dm.y_mu.shape[-1]})
-hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*5})
+hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*10})
 
 model = Model(scaling, **vars(hparams))
 
 if hparams.logger is True:
-	# logger = TensorBoardLogger(save_dir=hparams.logdir, name=hparams.logname)
-	from pytorch_lightning.loggers import WandbLogger
-
 	# os.environ['WANDB_API_KEY'] = 'afc4755e33dfa171a8419620e141ebeaeb8f27f5'
 	os.system('wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5')
 	# wandb.login(key='afc4755e33dfa171a8419620e141ebeaeb8f27f5', relogin=True)
-	logger = WandbLogger(project='BiDirectional_MD', entity='mlmd',
-			     name=hparams.logname)
+	logger = WandbLogger(project='SeparateIntegrationTimes', entity='mlmd',name=hparams.logname)
 	hparams.__dict__.update({'logger': logger})
 
 early_stop_callback = EarlyStopping(
 	monitor='Val/MSE',
-	min_delta=0.001,
+	min_delta=0.0001,
 	patience=3,
 	verbose=True,
 	mode='min',
@@ -364,10 +353,10 @@ trainer_ = Trainer()
 
 trainer = Trainer.from_argparse_args(	hparams,
 				     	max_epochs=2000,
-					min_epochs=5,
+					min_epochs=10,
 				     	# min_steps=1000,
 				     	# max_steps=50,
-				     	progress_bar_refresh_rate=5,
+				     	progress_bar_refresh_rate=1,
 				     	callbacks=[early_stop_callback],
 				     	# limit_train_batches=10,
 				     	# limit_val_batches=10,

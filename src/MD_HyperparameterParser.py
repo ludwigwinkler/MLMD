@@ -27,16 +27,14 @@ def HParamParser(	logger=False,
 			model='lstm',
 			subsampling=-1,
 			train_traj_repetition=1,
-			plot=False,
+			plot=True, show=False,
 			pct_data_set=1.0,
-			num_hidden=200,
 			num_layers=5,
 			input_length=3,
 			output_length=5,
 			output_length_train=-1,
 			output_length_val=-1,
-			output_length_sampling=True,
-			verbose=True,
+			output_length_sampling=False,
 			criterion=['T', 't'][0]
 		 ):
 	if ('ode' in model or 'hamiltonian' in model) and input_length != 1:
@@ -52,7 +50,7 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-logname', type=str, default=logname)
 	hparams.add_argument('-logdir', type=str, default=logdir)
 	hparams.add_argument('-plot', type=str2bool, default=plot)
-	hparams.add_argument('-verbose', type=str2bool, default=verbose)
+	hparams.add_argument('-show', type=str2bool, default=show)
 
 	hparams.add_argument('-gpus', type=int, default=1 if torch.cuda.is_available() else 0)
 	hparams.add_argument('-num_workers', type=int, default=4 if torch.cuda.is_available() else 0)
@@ -79,12 +77,12 @@ def HParamParser(	logger=False,
 							       	'lorenz',
 							       	'keto_100K_0.2fs.npz',
 							       	'keto_300K_0.2fs.npz','keto_300K_1.0fs.npz',
-								'keto_500K_0.2fs.npz',],
+								'keto_500K_0.2fs.npz'],
 			     default=data_set)
 	hparams.add_argument('-pct_data_set', type=float, default=pct_data_set)
 	hparams.add_argument('-subsampling', type=int, default=subsampling)
 
-	hparams.add_argument('-num_hidden', type=int, default=num_hidden)
+	hparams.add_argument('-num_hidden', type=int, default=-1)
 	hparams.add_argument('-num_layers', type=int, default=num_layers)
 
 	hparams.add_argument('-batch_size', type=int, default=200)
@@ -98,12 +96,9 @@ def HParamParser(	logger=False,
 
 	hparams.add_argument('-criterion', type=str, default=criterion)
 
-	hparams.add_argument('-plots_per_training', type=int, default=20)
 	hparams.add_argument('-val_split', type=float,
 			     default=0.8)  # first part is train, second is val batch_i.e. val_split=0.8 -> 80% train, 20% val
 
-	hparams.add_argument('-val_prediction_steps', type=int, default=50)
-	hparams.add_argument('-val_converge_criterion', type=int, default=20)
 	hparams.add_argument('-val_per_epoch', type=int, default=200)
 
 	hparams = hparams.parse_args()
@@ -111,10 +106,16 @@ def HParamParser(	logger=False,
 	hparams.output_length_train = hparams.output_length if hparams.output_length_train == -1 else hparams.output_length_train
 	hparams.output_length_val = hparams.output_length if hparams.output_length_val == -1 else hparams.output_length_val
 
+	# print(hparams)
+
 	if 'ode' in hparams.model or 'hamiltonian' in hparams.model:
 		if hparams.input_length !=1:
 			print(f"Input length for {model} was {input_length}, changed to 1")
 			hparams.input_length =1
+
+	hparams.__dict__.update({'logname': 	hparams.logname + '_' + str(hparams.model)
+					    	+ '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.data_set) +
+			    			'_Ttrain' + str(hparams.output_length_train) + '_Tval' + str(hparams.output_length_val)})
 
 	assert hparams.output_length >= 1
 	assert hparams.output_length_train >= 1
