@@ -494,6 +494,9 @@ INPUT ./figures/ExampleTrajectory.png
 INPUT figures/ExampleTrajectoryBi.png
 INPUT ./figures/ExampleTrajectoryBi.png
 INPUT ./figures/ExampleTrajectoryBi.png
+INPUT figures/ExampleTrajectoryBiIn1.png
+INPUT ./figures/ExampleTrajectoryBiIn1.png
+INPUT ./figures/ExampleTrajectoryBiIn1.png
 OUTPUT MLMD_Interpolation_ShortTalk.nav
 OUTPUT MLMD_Interpolation_ShortTalk.toc
 OUTPUT MLMD_Interpolation_ShortTalk.snm

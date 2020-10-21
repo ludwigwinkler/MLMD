@@ -320,7 +320,7 @@ class Model(LightningModule):
 
 hparams = HParamParser(logname='MD', logger=False, show=True,
 		       model='bi_lstm', data_set=['toluene_dft.npz','hmc', 'keto_500K_0.2fs.npz'][1], criterion='t',
-		       input_length=3, output_length=20,
+		       input_length=1, output_length=20,
 		       output_length_train=21, output_length_val=21, output_length_sampling=False)
 
 dm = load_dm_data(hparams)
