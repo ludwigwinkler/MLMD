@@ -13,6 +13,7 @@
 \usefonttheme[onlymath]{serif}
 \usepackage{graphicx, adjustbox}
 \graphicspath{{figures/}}
+
 %\usepackage{url}
 \newcommand{\red}[1]{\textcolor{red}{#1}}
 \newcommand{\blue}[1]{\textcolor{blue}{#1}}
@@ -25,6 +26,7 @@
 \usepackage{pgfplots}
 %\pgfplotsset{soldot/.style={color=blue,only marks,mark=*}} \pgfplotsset{holdot/.style={color=blue,fill=white,only marks,mark=*}}
 \pgfplotsset{compat=1.12}
+% \usepackage{subcaption}
 \usepackage{xcolor}
 \usepackage{tikz}
 \usetikzlibrary{graphs, graphs.standard, shapes.misc, positioning, fit, shadows, calc, snakes, shapes, patterns, arrows.meta, matrix, shapes.geometric}
@@ -505,6 +507,42 @@
 	\begin{figure}
 		 \centering
 		 \includegraphics[width=0.8\textwidth]{ExampleTrajectoryBiIn1.png}
+	\end{figure}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Analysis of Interpolations}
+	\begin{figure}[htb]
+		\begin{minipage}{0.3\textwidth}
+			\includegraphics[width=0.9\linewidth, height=5cm]{KetoMalonaldehyde100K_BiLSTM.png} 
+			\caption{Keto-Malonaldehyde ($100K$)}
+		\end{minipage}
+		\begin{minipage}{0.3\textwidth}
+			\includegraphics[width=0.9\linewidth, height=5cm]{KetoMalonaldehyde300K_BiLSTM.png}
+			\caption{Keto-Malonaldehyde ($300K$)}
+		\end{minipage}
+		\begin{minipage}{0.3\textwidth}
+			\includegraphics[width=0.9\linewidth, height=5cm]{KetoMalonaldehyde500K_BiLSTM.png}
+			\caption{Keto-Malonaldehyde ($500K$)}
+		\end{minipage}
+		% \caption{The distribution of interatomic distances $d$[ \AA ] of Keto-Malonaldehyde at 100 Kelvin (K), 300 Kelvin and 500 Kelvin. The predicted distribution of interatomistic distances is shown in red and the target distribution is shown in blue. The distributions becomes less multi-modal as the temperature increases.}
+		% \label{fig:interatomisticdistances}
+	\end{figure}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Analysis of Interpolations}
+	\begin{figure}[htb]
+		\begin{minipage}{0.49\textwidth}
+			\includegraphics[width=0.9\linewidth, height=5cm]{KETO-MDA_300K_GroundTruth.pdf} 
+			\caption{Ground Truth Free Energy Keto-Malonaldehyde ($300K$)}
+		\end{minipage}
+		\begin{minipage}{0.49\textwidth}
+			\includegraphics[width=0.9\linewidth, height=5cm]{KETO-MDA_300K_ML.pdf}
+			\caption{Predicted Free Energy Keto-Malonaldehyde ($300K$)}
+		\end{minipage}
+		% \caption{I don't know how to interpret these plots ...}
+		% \label{fig:interatomisticdistances}
 	\end{figure}
 \end{frame}
 
