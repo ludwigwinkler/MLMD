@@ -402,42 +402,41 @@ class MD_DataSet(LightningDataModule):
 	def __init__(self, hparams):
 
 		self.data_path = '../data/'
-		self.data_str = hparams.data_set
+		self.data_str = hparams.dataset
 		self.hparams = hparams
 
 		self.sequential_sampling=False
 
 		# print("MD_DataSet.__init__() executed")
 
-	def prepare_data(self, *args, **kwargs):
+	def load_and_process_MD_data(self):
 
 		raise NotImplementedError()
 
 	def setup(self, stage: Optional[str] = None):
 
-		path_pt = "../data/" + self.data_str.split(".")[0] + ".pt"
+		self.load_and_process_MD_data()
 
-		data = self.data.clone() # copy data such that the original data is not changed when working with data
-		assert data.dim() == 3
-		assert data.shape[0] == 1
+		assert self.data.dim() == 3
+		assert self.data.shape[0] == 1
 
 		'''
 		data.shape = [ts, timesteps, features]
 		'''
-		self.data_mean = data.mean(dim=[0,1])
-		self.data_std = data.std(dim=[0,1])
+		self.data_mean = self.data.mean(dim=[0,1])
+		self.data_std = self.data.std(dim=[0,1])
 
-		data = (data - self.data_mean) / (self.data_std + 1e-8)
+		self.data_norm = (self.data - self.data_mean) / (self.data_std + 1e-8)
 
-		train_data_size = int(data.shape[1] * self.hparams.val_split * self.hparams.pct_data_set)
-		val_data_size = int(data.shape[1]*(1-self.hparams.val_split))
+		train_data_size = int(self.data.shape[1] * self.hparams.val_split * self.hparams.pct_data_set)
+		val_data_size = int(self.data.shape[1]*(1-self.hparams.val_split))
 
 		'''
 		val_split: point in timeseries from where we consider it the validation trajectory
 		'''
-		val_split = int(data.shape[1] * self.hparams.val_split)
-		data_train = data[:, :int(val_split*self.hparams.pct_data_set)] # future reduce val_split by training percentage
-		data_val = data[:, int(val_split * self.hparams.pct_data_set):int(val_split * self.hparams.pct_data_set+val_data_size)]
+		val_split = int(self.data_norm.shape[1] * self.hparams.val_split)
+		data_train = self.data_norm[:, :int(val_split*self.hparams.pct_data_set)] # future reduce val_split by training percentage
+		data_val = self.data_norm[:, int(val_split * self.hparams.pct_data_set):int(val_split * self.hparams.pct_data_set+val_data_size)]
 
 		self.y_mu 	= data_train.data.mean(dim=[0, 1]).to(device)
 		self.y_std 	= data_train.data.std(dim=[0, 1]).to(device)
@@ -474,12 +473,12 @@ class MD_DataSet(LightningDataModule):
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
 
-		dataloader = DataLoader(self.data_train, batch_size=self.hparams.batch_size, shuffle=True, num_workers=self.hparams.num_workers)
+		dataloader = DataLoader(self.data_train, batch_size=self.hparams.batchsize, shuffle=True, num_workers=self.hparams.num_workers)
 
 		return dataloader
 
 	def val_dataloader(self, *args, **kwargs) -> DataLoader:
-		return DataLoader(self.data_val, batch_size=self.hparams.batch_size*2, num_workers=self.hparams.num_workers)
+		return DataLoader(self.data_val, batch_size=self.hparams.batchsize*2, num_workers=self.hparams.num_workers)
 
 	def __repr__(self):
 
@@ -505,56 +504,62 @@ class QuantumMachine_DFT(MD_DataSet):
 			print(f'Downloading {self.data_str} from quantum-machine.org/gdml/data/npz')
 			urllib.request.urlretrieve(url, '../data/' + self.data_str)
 
-		if not os.path.exists("../data/" + self.data_str.split(".")[0] + ".pt"):
-			data = np.load(path_npz)
-			try:
-				data = data['R']
-				
-			except:
-				print("Error preparing data")
+	def load_and_process_MD_data(self):
 
-			data = torch.from_numpy(data).float()
+		path_npz = "../data/" + self.data_str
 
-			pos = data[:-1]
-			vel = (data[1:] - data[:-1])
+		data = np.load(path_npz)
+		try:
+			data = data['R']
 
-			pos = pos.flatten(-2, -1).unsqueeze(0)
-			vel = vel.flatten(-2, -1).unsqueeze(0)
+		except:
+			print("Error preparing data")
 
-			self.data = torch.cat([pos, vel], dim=-1)
-			# torch.save(data, path_pt)
+		data = torch.from_numpy(data).float()
+
+		pos = data[:-1]
+		vel = (data[1:] - data[:-1])
+
+		pos = pos.flatten(-2, -1).unsqueeze(0)
+		vel = vel.flatten(-2, -1).unsqueeze(0)
+
+		self.data = torch.cat([pos, vel], dim=-1)
 
 class Keto_DFT(MD_DataSet):
 
 	def __init__(self, hparams):
 
 		self.data_path = '../data/'
-		self.data_str = hparams.data_set
+		self.data_str = hparams.dataset
 		self.hparams = hparams
-
-		self.sequential_sampling=False
 
 	def prepare_data(self, *args, **kwargs):
 
-		if self.data_str=='keto_100K_0.2fs.npz':
+		pass
 
-			pos = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.100K.CLMD.1B_DT-0.2FS_01.POSITION.0.npz')['R']
-			vel = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.100K.CLMD.1B_DT-0.2FS_01.VELOCITIES.0.npz')['V']
+	def load_and_process_MD_data(self):
+		if self.data_str == 'keto_100K_0.2fs.npz':
 
-		elif self.data_str=='keto_300K_0.2fs.npz':
+			self.pos_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.100K.CLMD.1B_DT-0.2FS_01.POSITION.0.npz'
+			self.vel_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.100K.CLMD.1B_DT-0.2FS_01.VELOCITIES.0.npz'
 
-			pos = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-0.2FS_01.POSITION.0.npz')['R']
-			vel = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-0.2FS_01.VELOCITIES.0.npz')['V']
+		elif self.data_str == 'keto_300K_0.2fs.npz':
 
-		elif self.data_str=='keto_300K_1.0fs.npz':
+			self.pos_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-0.2FS_01.POSITION.0.npz'
+			self.vel_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-0.2FS_01.VELOCITIES.0.npz'
 
-			pos = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-1.0FS_01.POSITION.0.npz')['R']
-			vel = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-1.0FS_01.VELOCITIES.0.npz')['V']
+		elif self.data_str == 'keto_300K_1.0fs.npz':
 
-		elif self.data_str=='keto_500K_0.2fs.npz':
+			self.pos_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-1.0FS_01.POSITION.0.npz'
+			self.vel_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.300K.CLMD.1B_DT-1.0FS_01.VELOCITIES.0.npz'
 
-			pos = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.500K.CLMD.1B_DT-0.2FS_01.POSITION.0.npz')['R']
-			vel = np.load('../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.500K.CLMD.1B_DT-0.2FS_01.VELOCITIES.0.npz')['V']
+		elif self.data_str == 'keto_500K_0.2fs.npz':
+
+			self.pos_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.500K.CLMD.1B_DT-0.2FS_01.POSITION.0.npz'
+			self.vel_path = '../data/KETO-MDA.SGDML.CCSD-T.CC-PVDZ.500K.CLMD.1B_DT-0.2FS_01.VELOCITIES.0.npz'
+
+		pos = np.load(self.pos_path)['R']
+		vel = np.load(self.vel_path)['V']
 
 		pos = torch.from_numpy(pos).float()
 		vel = torch.from_numpy(vel).float()
@@ -563,6 +568,36 @@ class Keto_DFT(MD_DataSet):
 		vel = vel.flatten(-2, -1)
 
 		self.data = torch.cat([pos, vel], dim=-1)
+
+	def save_prediction(self, pred_data, true_data=None):
+
+		assert pred_data.dim()==2
+		assert pred_data.shape[-1]==self.data.shape[-1]
+
+		npz_ = np.load(self.pos_path, allow_pickle=True)
+		num_atoms = npz_['typ'].size # 1D array of letters denoting the atoms
+		if true_data is not None:
+			assert true_data.dim() == 2
+			assert true_data.shape[-1] == self.data.shape[-1]
+			true_data = true_data * self.data_std + self.data_mean
+			timesteps, _ = true_data.shape
+			pos, vel = true_data.chunk(chunks=2, dim=-1)
+			pos = pos.reshape(1, timesteps, num_atoms, 3)
+			assert F.mse_loss(pos, torch.from_numpy(npz_['R'][:,:timesteps]),reduction='sum')<=1e-3, f"{F.mse_loss(pos, torch.from_numpy(npz_['R'][:, :timesteps]))=}"
+			npz_dict = dict(npz_)
+			npz_dict.update({'R': pos.float().numpy()})
+			np.savez(self.pos_path[:-4] + '.VAL' + '.npz', **npz_dict)
+
+		data = pred_data * self.data_std + self.data_mean
+		pos, vel = data.chunk(chunks=2, dim=-1)
+		timesteps, features = data.shape
+		pos = pos.reshape(1, timesteps, num_atoms, 3)
+
+		npz_dict = dict(npz_)
+		npz_dict.update({'R': pos.float().numpy()})
+		np.savez(self.pos_path[:-4]+'.VALPRED'+'.npz', **npz_dict)
+
+		# npz_['R'] = data * self.data_std + self.data_mean
 
 class HMC_DM(LightningDataModule):
 
@@ -653,16 +688,16 @@ class HMC_DM(LightningDataModule):
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
 		# print(f" @train_dataloader(): {self.data_train.data.shape=}")
-		return DataLoader(self.data_train, batch_size=self.hparams.batch_size, shuffle=True)
+		return DataLoader(self.data_train, batch_size=self.hparams.batchsize, shuffle=True)
 
 	def val_dataloader(self, *args, **kwargs) -> DataLoader:
-		return DataLoader(self.data_val, batch_size=self.hparams.batch_size, shuffle=True)
+		return DataLoader(self.data_val, batch_size=self.hparams.batchsize, shuffle=True)
 
 	def __repr__(self):
 		return f'{self.data_str}: {self.data.shape} features'
 
 def load_dm_data(hparams):
-	data_str = hparams.data_set
+	data_str = hparams.dataset
 	if data_str in ['benzene_dft.npz',
 			'ethanol_dft.npz',
 			'malonaldehyde_dft.npz',

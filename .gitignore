@@ -8,8 +8,13 @@ __pycache__/
 
 #Excluded folders
 /data/*
+experiments/ckpt/*
+experiments/ckpt/*.ckpt
 /experiments/wandb/*
 /experiments/Old/*
+/resources/MDCode/*.npz
+/resources/MDCode/*.dat
+/resources/MDCode/*.xyz
 
 # Distribution / packaging
 .Python

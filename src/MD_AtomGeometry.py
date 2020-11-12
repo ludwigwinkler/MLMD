@@ -139,7 +139,20 @@ class Atom(torch.nn.Module):
 
 		return angle, dist
 
+def compute_innermolecular_distances(data):
 
+	assert data.dim()==3
+
+	pos = data[:, :, :data.shape[-1] // 2]
+	num_atoms = pos.shape[-1]//3
+
+	pos = pos.reshape(data.shape[0], data.shape[1], num_atoms, 3) #[ BS, TS, Atom, Dim]
+
+	# [ BS, TS, Atom, 1, Dim] - [ BS, TS, 1, Atom, Dim] = [ BS, TS, Atom, Atom, Dim] : pairwise atomic distance
+	# square -> sum -> root
+	dist = ((pos.unsqueeze(-2) - pos.unsqueeze(-3)).pow(2).sum(dim=-1)).pow(0.5)
+
+	return dist
 
 if __name__=='__main__':
 

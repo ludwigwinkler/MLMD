@@ -19,13 +19,14 @@ np.set_printoptions(precision=4, suppress=True)
 def HParamParser(	logger=False,
 			logname='experiment',
 			logdir='experimentdir',
-			data_set=[	'ethanol_dft.npz', 'benzene_dft.npz', 'malonaldehyde_dft.npz', 'uracil_dft.npz',
+			dataset=[	'ethanol_dft.npz', 'benzene_dft.npz', 'malonaldehyde_dft.npz', 'uracil_dft.npz',
 					'lorenz', 'hmc',
 					'keto_100K_0.2fs.npz',
 				    	'keto_300K_1.0fs.npz', 'keto_300K_0.2fs.npz',
-					'keto_500K_0.2fs.npz'][-1],
+					'keto_500K_0.2fs.npz'],
 			model='lstm',
 			subsampling=-1,
+			batchsize=10,
 			train_traj_repetition=1,
 			plot=True, show=False,
 			pct_data_set=1.0,
@@ -35,7 +36,8 @@ def HParamParser(	logger=False,
 			output_length_train=-1,
 			output_length_val=-1,
 			output_length_sampling=False,
-			criterion=['T', 't'][0]
+			criterion=['T', 't'][0],
+			load_pretrained=False
 		 ):
 	if ('ode' in model or 'hamiltonian' in model) and input_length != 1:
 		input_length = 1
@@ -51,8 +53,8 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-logdir', type=str, default=logdir)
 	hparams.add_argument('-plot', type=str2bool, default=plot)
 	hparams.add_argument('-show', type=str2bool, default=show)
+	hparams.add_argument('-load_pretrained', type=str2bool, default=load_pretrained)
 
-	hparams.add_argument('-gpus', type=int, default=1 if torch.cuda.is_available() else 0)
 	hparams.add_argument('-num_workers', type=int, default=4 if torch.cuda.is_available() else 0)
 
 	hparams.add_argument('-odeint', type=str, choices=['explicit_adams', 'fixed_adams' 'adams', 'tsit5', 'dopri5', 'euler', 'midpoint', 'rk4'],
@@ -60,7 +62,7 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-model', type=str, choices=['hamiltonian', 'ode', 'rnn', 'lstm', 'bi_ode', 'bi_hamiltonian', 'bi_rnn',
 							  'bi_lstm'], default=model)
 
-	hparams.add_argument('-data_set', type=str, choices=[	'benzene_dft.npz',
+	hparams.add_argument('-dataset', type=str, choices=[	'benzene_dft.npz',
 							       	'ethanol_dft.npz',
 							       	'malonaldehyde_dft.npz',
 							       	'uracil_dft.npz',
@@ -78,14 +80,14 @@ def HParamParser(	logger=False,
 							       	'keto_100K_0.2fs.npz',
 							       	'keto_300K_0.2fs.npz','keto_300K_1.0fs.npz',
 								'keto_500K_0.2fs.npz'],
-			     default=data_set)
+			     default=dataset)
 	hparams.add_argument('-pct_data_set', type=float, default=pct_data_set)
 	hparams.add_argument('-subsampling', type=int, default=subsampling)
 
 	hparams.add_argument('-num_hidden', type=int, default=-1)
 	hparams.add_argument('-num_layers', type=int, default=num_layers)
 
-	hparams.add_argument('-batch_size', type=int, default=200)
+	hparams.add_argument('-batchsize', type=int, default=batchsize)
 	hparams.add_argument('-train_traj_repetition', type=int, default=train_traj_repetition)
 	hparams.add_argument('-input_length', type=int, default=input_length)
 
@@ -99,14 +101,10 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-val_split', type=float,
 			     default=0.8)  # first part is train, second is val batch_i.e. val_split=0.8 -> 80% train, 20% val
 
-	hparams.add_argument('-val_per_epoch', type=int, default=200)
-
 	hparams = hparams.parse_args()
 
 	hparams.output_length_train = hparams.output_length if hparams.output_length_train == -1 else hparams.output_length_train
 	hparams.output_length_val = hparams.output_length if hparams.output_length_val == -1 else hparams.output_length_val
-
-	# print(hparams)
 
 	if 'ode' in hparams.model or 'hamiltonian' in hparams.model:
 		if hparams.input_length !=1:
@@ -114,8 +112,9 @@ def HParamParser(	logger=False,
 			hparams.input_length =1
 
 	hparams.__dict__.update({'logname': 	hparams.logname + '_' + str(hparams.model)
-					    	+ '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.data_set) +
+					    	+ '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.dataset) +
 			    			'_Ttrain' + str(hparams.output_length_train) + '_Tval' + str(hparams.output_length_val)})
+	hparams.__dict__.update({'ckptname': 	str(hparams.model)+'_'+str(hparams.dataset)+'_TrainT'+str(output_length_train)})
 
 	assert hparams.output_length >= 1
 	assert hparams.output_length_train >= 1
