@@ -1,5 +1,5 @@
 # Fdb version 3
-["pdflatex"] 1605197827 "MLMD_Interpolation_IntroTalk.tex" "MLMD_Interpolation_IntroTalk.pdf" "MLMD_Interpolation_IntroTalk" 1605197862
+["pdflatex"] 1605288472 "MLMD_Interpolation_IntroTalk.tex" "MLMD_Interpolation_IntroTalk.pdf" "MLMD_Interpolation_IntroTalk" 1605288477
   "/usr/local/texlive/2018/texmf-dist/fonts/map/fontname/texfonts.map" 1511824771 3332 103109f5612ad95229751940c61aada0 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy5.tfm" 1480098698 1120 1e8878807317373affa7f7bba4cf2f6a ""
   "/usr/local/texlive/2018/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy6.tfm" 1480098698 1124 14ccf5552bc7f77ca02a8a402bea8bfb ""
@@ -66,7 +66,6 @@
   "/usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb" 1480098733 24373 a91d375736817a75026663adcb2190c1 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb" 1480098733 28902 2f5c04fd2884d1878057baa5aad22765 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb" 1480098733 32569 5e5ddc8df908dea60932f3c484a54c0d ""
-  "/usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb" 1480098733 32716 08e384dc442464e7285e891af9f45947 ""
   "/usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb" 1480098733 32626 4f5c1b83753b1dd3a97d1b399a005b4b ""
   "/usr/local/texlive/2018/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb" 1480098733 32442 c975af247b6702f7ca0c299af3616b80 ""
   "/usr/local/texlive/2018/texmf-dist/tex/context/base/mkii/supp-pdf.mkii" 1480098806 71627 94eb9990bed73c364d7f53f960cc8c5b ""
@@ -324,10 +323,10 @@
   "/usr/local/texlive/2018/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1523934492 2717033 f61a5287d9c22a39a74f1979fe3f905c ""
   "/usr/local/texlive/2018/texmf-var/web2c/pdftex/pdflatex.fmt" 1542146692 4220281 f36cc5d90ce67d316722720ecb296683 ""
   "/usr/local/texlive/2018/texmf.cnf" 1523934483 577 0b39adfd7c93507ff20c9c14c2f1a33f ""
-  "MLMD_Interpolation_IntroTalk.aux" 1605197831 2822 85941c605dd429e8ac4325032be1cd2e ""
-  "MLMD_Interpolation_IntroTalk.nav" 1605197831 1507 40e9271d65f81867addd27ef8073b59a ""
-  "MLMD_Interpolation_IntroTalk.out" 1605197828 0 d41d8cd98f00b204e9800998ecf8427e ""
-  "MLMD_Interpolation_IntroTalk.tex" 1605197840 21398 f9dcb58a552871e08a396780b382a8db ""
+  "MLMD_Interpolation_IntroTalk.aux" 1605288476 2822 bb3e660319ef51b70b183e60847f4640 ""
+  "MLMD_Interpolation_IntroTalk.nav" 1605288476 1507 a98783402ce3dfee27154abca7fac837 ""
+  "MLMD_Interpolation_IntroTalk.out" 1605288473 0 d41d8cd98f00b204e9800998ecf8427e ""
+  "MLMD_Interpolation_IntroTalk.tex" 1605288471 21602 902c01bdb874b896cf5f7dd6ca85b10b ""
   "figures/ExampleTrajectory.png" 1603318545 191192 3b94b85f40adfee1f817c6ccc5f49a54 ""
   "figures/ExampleTrajectoryBi.png" 1603320645 156164 9117bc784f0bd52e12efb2752b369996 ""
   "figures/ExampleTrajectoryBiIn1.png" 1603321877 167834 362451da7ff8f5d638e855a5ba494a8d ""
@@ -337,10 +336,10 @@
   "figures/KetoMalonaldehyde300K_BiLSTM.png" 1605196739 48609 3d7d3f39b2397f38c592869e42e06bc4 ""
   "figures/KetoMalonaldehyde500K_BiLSTM.png" 1605196744 47165 a1b93c1bb525062ab9c3595834a7df3a ""
   (generated)
+  "MLMD_Interpolation_IntroTalk.aux"
   "MLMD_Interpolation_IntroTalk.nav"
-  "MLMD_Interpolation_IntroTalk.pdf"
   "MLMD_Interpolation_IntroTalk.out"
   "MLMD_Interpolation_IntroTalk.snm"
   "MLMD_Interpolation_IntroTalk.log"
   "MLMD_Interpolation_IntroTalk.toc"
-  "MLMD_Interpolation_IntroTalk.aux"
+  "MLMD_Interpolation_IntroTalk.pdf"

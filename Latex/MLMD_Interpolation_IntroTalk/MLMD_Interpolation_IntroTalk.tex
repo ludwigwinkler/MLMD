@@ -80,7 +80,7 @@
   \vskip0pt%
 }
 
-\title[Interpolation of MD with Bi-Directional NN]{Interpolation of Molecular Dynamics with Bi-Directional Neural Networks}
+\title[Interpolation of MD with Bi-Directional NN]{Interpolation of Molecular Dynamics Trajectories \\ with Bi-Directional Neural Networks}
 \subtitle{}
 \author[Winkler \& Sauceda]{Ludwig Winkler \& Huziel Sauceda}
 \date{\today}
@@ -128,9 +128,9 @@
 \begin{frame}
 	\frametitle{Molecular Dynamics (MD)}
 	\begin{itemize}
-		\item<+-> Molecules are governed by Newton's equations of motion 
+		\item<+-> "Classical" dynamics of molecules are governed by Newton's equations of motion 
 		\item<+-> Position $r(t)$ and momentum $p(t)$ describe the system completely
-		\item<+-> Dynamics $f$ given by differential equation (DiffEq)
+		\item<+-> Dynamics $f$ given by differential equation
 		\begin{align*}
 			\dot{x}(t) =
 			\begin{bmatrix}
@@ -162,13 +162,15 @@
 \begin{frame}
 	\frametitle{Molecular Dynamics (MD)}
 	\begin{itemize}
-		\item<+-> High-dimensional N-body problems are expensive to solve
-		\item<+-> MD requirements 
+		% \item<+-> Large N-body problems are expensive to solve
+		\item<+-> High accuracy description of high dimensional N-bodies are expensive to compute
+		\item<+-> MD requirements for a statistical meaningful result
 		\begin{itemize}
-			\item $\Delta t = 10^{-15} s$ integration step size for accurate dynamics
-			\item $T \in \{ 10^{-6} s, ...,  10^{-9} s \}$ solutions for expressive properties
+			\item $\Delta t = 0.2 \ fs$ time step size for accurate integration of the equations of motion
+			\item $T \sim 1 \ ns$: $10^6 - 10^7$ integration steps for expressive properties
 		\end{itemize}
-		\item<+-> Dynamics $f$ are expensive to compute for large N-body problems and long integration lengths
+		\item<+-> Dynamics $f$ are expensive to solve for long simulations
+		\item<+-> Single Thread DFT: $10$s integration step requires 110 days
 		\item[] 
 		\item<+-> Yet, essentially we are dealing with a time series prediction problem ...
 		\item[] 
@@ -183,8 +185,8 @@
 	\frametitle{Learning Dynamical Systems}
 	\begin{itemize}
 		\item<+-> Given true dynamics $f$, learn dynamics $f_\theta$ with NN
-		\item<+-> Optimize $f_\theta$ to predict the true solutions $x(t)$
 		\item<+-> Integrate dynamics \red{$ \widehat{\dot{x}}(t) = f_\theta$} to obtain learned solution \red{$\hat{x}(t)$}
+		\item<+-> Optimize $f_\theta$ to predict the true solutions $x(t)$
 	\end{itemize}
 	\onslide<+->
 	\begin{figure}[!htbp]
