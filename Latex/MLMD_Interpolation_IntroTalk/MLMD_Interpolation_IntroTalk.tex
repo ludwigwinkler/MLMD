@@ -184,55 +184,141 @@
 \begin{frame}
 	\frametitle{Learning Dynamical Systems}
 	\begin{itemize}
-		\item<+-> Given true dynamics $f$, learn dynamics $f_\theta$ with NN
+		\item<+-> Learn dynamics $f_\theta$ with NN from true dynamics $f$
 		\item<+-> Integrate dynamics \red{$ \widehat{\dot{x}}(t) = f_\theta$} to obtain learned solution \red{$\hat{x}(t)$}
 		\item<+-> Optimize $f_\theta$ to predict the true solutions $x(t)$
 	\end{itemize}
 	\onslide<+->
-	\begin{figure}[!htbp]
-		\begin{adjustbox}{max width = 0.3\textwidth, height = 0.4\textheight}
-			\begin{tikzpicture}
-				\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
-				\tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
-				\tikzset{node/.style={draw, circle, fill, scale=0.25}}
+	% \begin{figure}[!htbp]
+	% 	\begin{adjustbox}{max width = 0.3\textwidth, height = 0.6\textheight}
+	% 		\begin{tikzpicture}
+	% 			\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
+	% 			\tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
+	% 			\tikzset{node/.style={draw, circle, fill, scale=0.25}}
 				
-				% \clip (-0.5,3) rectangle (10,-3);
+	% 			% \clip (-0.5,3) rectangle (10,-3);
 
-				\node (z0) [node]  at (0,-0.5) {}; 
-				\node (zT) [node] at (5, 0.5) {};
+	% 			\node (z0) [node]  at (0,-0.5) {}; 
+	% 			\node (zT) [node, label={[above]{\scriptsize $x(t_0)$}}] at (5, 0.5) {};
 		
-				\draw[arrow, black] (z0.north) .. controls +(45:5cm) and +(225:5cm) .. (zT);
-				\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (0,-1) -- (4.9,-1) node [black,midway,yshift=-0.6cm] {\large $x(t)$};
+	% 			\draw[arrow, black] (z0.north) .. controls +(45:5cm) and +(225:5cm) .. (zT);
+	% 			\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (0,-1) -- (4.9,-1) node [black,midway,yshift=-0.6cm] {\large $x(t)$};
+
+	% 			\onslide<5->{
+	% 				\node[red, node, opacity=0] (t1) at (8, 0.8){};
+	% 				\draw[red, dotted, arrow] (zT) to node[below, red] {\scriptsize $\widehat{\dot{x}}(t_0)$} (t1);
+	% 			}
+	% 			\onslide<6->{
+	% 				\node[red, node, label={[above, red]{\scriptsize $x(t_1)$}}] (t1) at (8, 0.8){};
+	% 			}
+	% 			\onslide<7->{
+	% 				\node[red, node, opacity=0] (t2) at (10, -0.5){};
+	% 				\draw[red, dotted, arrow] (t1) to node[below left, red] {\scriptsize $\widehat{\dot{x}}(t_1)$} (t2);
+	% 			}
+	% 			\onslide<8->{
+	% 				\node[red, node, label={[above right, red]{\scriptsize $x(t_2)$}}] (t2) at (10, -0.5){};
+	% 			}
 				
-				\node (zT1) at (10, -0.5) {};
-				\draw[draw=none] (zT.north) .. controls +(50:3cm) and +(225:3cm) .. (zT1)
-				\foreach \t in {33,66,100}
-				{ node[red] (a\t) [pos=\t/100,node,draw=red] {} };
+	% 			\onslide<9->{
+	% 				\node[red, node, opacity=0] (t3) at (12, -0.4){};
+	% 				\draw[red, dotted, arrow] (t2) to node[below, red] {\scriptsize $\widehat{\dot{x}}(t_2)$} (t3);
+	% 			}
+	% 			\onslide<10->{
+	% 				\node[red, node, label={[above, red]{\scriptsize $x(t_3)$}}] (t2) at (12, -0.4){};
+	% 			}
+
+	% 			\onslide<11->{
 				
-				\draw[red, dotted, arrow] (zT) to node[below, red] {} (a33);
-				\draw[red, dotted, arrow] (a33) to node[above right, red] {$\widehat{\dot{x}}(t)$}  (a66);
-				\draw[red, dotted, arrow] (a66) to (a100);
+	% 			\node[red, node] (t2) at (10, -0.5){};
+	% 			\node[red, node] (t3) at (12, -0.4){};
+				
+	% 			\draw[red, dotted, arrow] (zT) to node[below, red] {} (t1);
+	% 			% \draw[red, dotted, arrow] (t1) to node[above right, red] {$\widehat{\dot{x}}(t)$}  (t2);
+	% 			\draw[red, dotted, arrow] (t2) to (t3);
 		
-				% \node (reala100)[node] at ($(a100)+(0,1.0)$) {};
-				% \draw[black, dotted, arrow, shorten >= 2pt] (a66) to node[above, black] {\scriptsize $dx(t)$} (reala100);
-				% \draw[{Bar[]}-{Bar[]}, red, dashed, shorten >= 3pt, shorten <= 3pt] (a100) to node[right]{$\mathcal{L}$} (reala100);
-				\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (5.1,-1) -- (10,-1) node [red,midway,yshift=-0.6cm] {\large $\hat{x}(t)$};
-		
-				\node (zT2)[node] at (14, 1) {};
-				\draw[arrow, black] (a100.east) .. controls +(20:2cm) and +(135:2cm) .. node[above left] {$x(t)$} (zT2);
-				\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (10.1,-1) -- (13.9,-1) node [black,midway,yshift=-0.6cm] {\large $x(t)$};
+	% 			\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (5.1,-1) -- (12.5,-1) node [red,midway,yshift=-0.6cm] {\large $\hat{x}(t)$};
+	% 			}
+	% 		\end{tikzpicture}
+	% 	\end{adjustbox}
+	% 	\end{figure}
+	\begin{figure}[!htbp]
+		\begin{adjustbox}{max width = 0.3\textwidth, height = 0.6\textheight}
+			\begin{tikzpicture}[scale=2]
+
+				\tikzset{simpoint/.style={circle, minimum width=7, inner sep=0, black, fill}}
 				
-				\node (zT3) at (18, 0.5) {};
-				\draw[draw=none] (zT2.north) .. controls +(300:3cm) and +(225:3cm) .. node[above right, red]{} (zT3)
-				\foreach \t in {33,66,100}
-				{ node[red] (b\t) [pos=\t/100,node,draw=red] {} };
+				\draw [-latex, ultra thick, black] (0,-0.1) -- (0,2) node[at end, left] {};
+				\draw [-latex, ultra thick, black] (-0.1,0) -- node[at end, below=0.5cm] {\large Time} (6.5,0);
+			
+
+				\onslide<4->{
+				\node[simpoint] (t0) at (0.1,0.1){};
+				\node[simpoint] (t1) at (1.5,1.5){};
+				\node[simpoint] (t2) at (3.,0.25){};
+				\node[simpoint] (t3) at (4.5,1.1){};
+				\node[simpoint] (t4) at (6.,1.5){};
+			
+				\draw[black, thick] (t0) to (t1) to (t2) to (t3) to (t4);
+				\draw[black, thick, dashed] (t0) |- (0,0);
+				\draw[black, thick, dashed] (t1) |- (0,0);
+				\draw[black, thick, dashed] (t2) |- (0,0);
+				\draw[black, thick, dashed] (t3) |- (0,0);
+				\draw[black, thick, dashed] (t4) |- (0,0);
+
+				\draw[{Bar[]}-{Bar[]}, ultra thick] (1.5, -0.25) -- node [below]{\large $\Delta t$} (3, -0.25);
+				\node[above= 0.5cm of t2] () {\huge $x(t)$};
+				}
 				
-				% \draw[red, dotted, arrow] (zT2) to node[above right, red] {123} (b33);
-				\draw[red, dotted, arrow] (zT2) to (b33);
-				\draw[red, dotted, arrow] (b33) to (b66);
-				\draw[red, dotted, arrow] (b66) to node[above left, red] {$\widehat{\dot{x}}(t)$} (b100);
-		
-				\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (14.1,-1) -- (18.1,-1) node [red,midway,yshift=-0.6cm] {\large $\hat{x}(t)$};
+
+				\onslide<5->{
+				\draw [red, thick] (0.1, 0.1)   to [out=60, in=180] (1.5,1.5)
+				to [out=0, in=180] (3,0.25)
+				to [out=0, in=135] (6,1.5)
+				to [out=315, in=135] ++(315:0.5cm);
+
+				\node[red, right= 0.75cm of t1] () {\huge $\hat{x}(t)$};
+				\draw[black, thick] (t0) to (t1) to (t2) to (t3) to (t4);
+				\draw[black, thick, dashed] (t0) |- (0,0);
+				\draw[black, thick, dashed] (t1) |- (0,0);
+				\draw[black, thick, dashed] (t2) |- (0,0);
+				\draw[black, thick, dashed] (t3) |- (0,0);
+				\draw[black, thick, dashed] (t4) |- (0,0);
+				}
+
+				\onslide<6->{
+				\draw[thick] (4.25,0.9) rectangle ++(2,1);
+				% \node[anchor=south west] (box) at (4.25,0.9) [draw,thick,minimum width=2pt,minimum height=1pt] {};
+			
+				\node[above= 4cm of t2] (zoom) {% <- this 'right of' is inherited; how to avoid?
+				\begin{tikzpicture}[scale=3, thick]
+					\clip (4.25,0.9) rectangle ++(2,1.5);
+					\draw[ultra thick] (4.25,0.9) rectangle ++(2,1.5);
+					\draw [red, thick] (0.1, 0.1)   to [out=0, in=180] (3,0.25)
+													to [out=0, in=135] (6,1.5)
+													to [out=315, in=135] ++(315:0.5cm);
+			
+					\node[simpoint] (t3) at (4.5,1.03){};
+					\node[simpoint] (t4) at (6.,1.44){};
+					\draw[black, thick] (t3) to (t4);
+			
+					\draw[black, thick] (4.5, 2.) to (6, 2.);
+					\foreach \x in {4.5,5.,5.5,6.}
+						\draw[black, thick] (\x,1.9) -- (\x,2.1);
+			
+					\draw[red, thick] (5, 2.) to (5.5, 2.);
+					\foreach \x in {5.,5.5,}
+						\draw[red, thick] (\x,1.9) -- (\x,2.1);
+					
+					\node[red, thick] at (5.25, 2.1) {$\Delta \tau$};
+					\draw[black, thick, dashed] (4.5, 2.0) |- (t3);
+					\draw[black, thick, dashed] (6, 2.0) |- (t4);
+			
+				\end{tikzpicture}
+				};
+
+				\draw[thick] ($(4.24, 0.9)+(0,1)$) -- ($(zoom.south west)+(0.05, 0.09)$);
+				\draw[thick] ($(4.24, 0.9)+(2,1)$) -- ($(zoom.north east)+(-0.05, -0.09)$);
+				}
 			
 			\end{tikzpicture}
 		\end{adjustbox}
@@ -297,58 +383,111 @@
 \begin{frame}
 	\frametitle{Learning Dynamical Systems with LSTM}
 	\begin{itemize}
-		\item Best performing due to fewest assumptions and flexible parameterization
-		\item Memory cell $c(t)$ to selectively read and write information
-		\item Outputs $[ \dot{r}(t), \dot{p}(t)]^T$ are integrated to obtain solution $\hat{x}(t)$
+		\item<+-> Best performing due to fewest assumptions and flexible parameterization
+		\item<+-> Memory cell $c(t)$ to selectively read and write information
+		\item<+-> Outputs $[ \dot{r}(t), \dot{p}(t)]^T$ are integrated to obtain solution $\hat{x}(t)$
 	\end{itemize}
 	\begin{figure}
 		% \centering
 		\begin{adjustbox}{max width = 1.\textwidth, height = 0.5\textheight}
-			\begin{tikzpicture}[node distance=2cm]
+			\begin{tikzpicture}[node distance=3cm]
 				\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
 				% \tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
 				% \tikzset{node/.style={draw, circle, fill, red, scale=0.25}}
 				\tikzset{LSTMCell/.style={draw, rectangle, red, scale=1.}}
+				% \tikzset{pics/little arrow/.style={code={
+				% 		\draw[red,-latex] (0,0) arc[radius=0.4cm, start angle=90, end angle=360]
+				% 		node[midway, red, fill=white,font=\scriptsize ]{#1};
+				% 		}},
+				% 		LSTMCell/.style={draw, rectangle, red, scale=1.,
+				% 		append after command={([xshift=-0.0cm]\tikzlastnode.185)
+				% 		pic{little arrow={#1}}
+				% 		}}}
 
 				% \clip (-3,-4) rectangle (10,3);
 				
 				% Step 0
+				\onslide<4->{
 				\node (lstm0) [LSTMCell] at (0,0) {LSTM}; 
-				\draw [-latex, red, draw] ([xshift=-0.0cm]lstm0.185) arc[radius=0.4cm, start angle=90, end angle=360] node[midway, red, fill=white](){\scriptsize $c(t)$};
+				% \draw [-latex, red, draw] ([xshift=-0.0cm]lstm0.185) arc[radius=0.4cm, start angle=90, end angle=360] node[midway, red, fill=white](){\scriptsize $c(t)$};
 				
+
 				\node (input0) [red, below = 1cm of lstm0] {$\begin{bmatrix} r(t_0) \\ p(t_0) \end{bmatrix}$};
 				\draw [arrow, red] (input0) -- (lstm0);
 				\node (output0) [red, above = 1cm of lstm0] {$\begin{bmatrix} \dot{r}(t_0) \\ \dot{p}(t_0) \end{bmatrix}$};
 				\draw [arrow, red] (lstm0) -- (output0);
 
-				% Step 1
-				\node (lstm1) [LSTMCell, right = of lstm0] {LSTM}; 
-				\draw [-latex, red, draw] ([xshift=-0.0cm]lstm1.185) arc[radius=0.4cm, start angle=90, end angle=360] node[midway, red, fill=white](){\scriptsize $c(t)$};
-				
-				\node (input1) [red, below = 1cm of lstm1] {$\begin{bmatrix} r(t_1) \\ p(t_1) \end{bmatrix}$};
-				\draw [arrow, red] (input1) -- (lstm1);
-				\node (output1) [red, above = 1cm of lstm1] {$\begin{bmatrix} \dot{r}(t_1) \\ \dot{p}(t_1) \end{bmatrix}$};
-				\draw [arrow, red] (lstm1) -- (output1);
-
-				% Step 2
-				\node (lstm2) [LSTMCell, right = of lstm1] {LSTM}; 
-				\draw [-latex, red, draw] ([xshift=-0.0cm]lstm2.185) arc[radius=0.4cm, start angle=90, end angle=360] node[midway, red, fill=white](){\scriptsize $c(t)$};
-			
-				\node (input2) [red, below = 1cm of lstm2] {$\begin{bmatrix} r(t_2) \\ p(t_2) \end{bmatrix}$};
-				\draw [arrow, red] (input2) -- (lstm2);
-				\node (output2) [red, above = 1cm of lstm2] {$\begin{bmatrix} \dot{r}(t_2) \\ \dot{p}(t_2) \end{bmatrix}$};
-				\draw [arrow, red] (lstm2) -- (output2);
-
-				% Recurrent connections
-				\draw [arrow, red] (lstm0) -- (lstm1);
-				\draw [arrow, red] (lstm1) -- (lstm2);
-				
-				% Time Steps
 				\node (t0)[red, below=0.5cm of input0]{$t_0$};
-				\node (t1)[red, below=0.5cm of input1]{$t_1$};
-				\node (t2)[red, below=0.5cm of input2]{$t_2$};
-				\draw [arrow, red] (t0) -- node[above]{$\Delta t$} (t1);
-				\draw [arrow, red] (t1) -- node[above]{$\Delta t$} (t2);
+				}
+				
+				\onslide<5->{
+					\node (lstm1) [opacity=0, right = of lstm0] {LSTM}; 
+					\node (input1) [opacity=0, below = 1cm of lstm1] {$\begin{bmatrix} r(t_1) \\ p(t_1) \end{bmatrix}$};
+					\node (t1)[red, below=0.5cm of input1]{$t_1$};
+					\draw [arrow, red] (t0) -- node[above]{$\Delta t$} (t1);
+				}
+
+				\onslide<6->{
+					\node (lstm1) [LSTMCell, right = of lstm0] {LSTM}; 
+					\node (input1) [red, below = 1cm of lstm1] {$\begin{bmatrix} r(t_1) \\ p(t_1) \end{bmatrix}$};
+					\draw [arrow, red] (input1) -- (lstm1);
+					\node (output1) [red, above = 1cm of lstm1] {$\begin{bmatrix} \dot{r}(t_1) \\ \dot{p}(t_1) \end{bmatrix}$};
+					\draw [arrow, red] (lstm1) -- (output1);
+				}
+
+				\onslide<7->{
+					\draw [arrow, red] (lstm0) -- node[above]{$c(t)$} (lstm1);
+				}
+
+				\onslide<8->{
+					\node (lstm2) [opacity=0, right = of lstm1] {LSTM}; 
+					\node (input2) [opacity=0, below = 1cm of lstm2] {$\begin{bmatrix} r(t_1) \\ p(t_1) \end{bmatrix}$};
+					\node (t2)[red, below=0.5cm of input2]{$t_2$};
+					\draw [arrow, red] (t1) -- node[above]{$\Delta t$} (t2);
+				}
+
+				\onslide<9->{
+					\node (lstm2) [LSTMCell, right = of lstm1] {LSTM}; 
+					\node (input2) [red, below = 1cm of lstm2] {$\begin{bmatrix} r(t_2) \\ p(t_2) \end{bmatrix}$};
+					\draw [arrow, red] (input2) -- (lstm2);
+					\node (output2) [red, above = 1cm of lstm2] {$\begin{bmatrix} \dot{r}(t_2) \\ \dot{p}(t_2) \end{bmatrix}$};
+					\draw [arrow, red] (lstm2) -- (output2);
+				}
+
+				\onslide<10->{
+					\draw [arrow, red] (lstm1) -- node[above]{$c(t)$} (lstm2);
+				}
+				
+
+				% \onslide<5->{
+				% \node (lstm1) [LSTMCell, right = of lstm0] {LSTM}; 
+				% % \draw [-latex, red, draw] ([xshift=-0.0cm]lstm1.185) arc[radius=0.4cm, start angle=90, end angle=360] node[midway, red, fill=white](){\scriptsize $c(t)$};
+				% \draw [arrow, red] (t0) -- node[above]{$\Delta t$} (t1);
+				% \node (t1)[red, below=0.5cm of input1]{$t_1$};
+				% }
+
+				% \node (input1) [red, below = 1cm of lstm1] {$\begin{bmatrix} r(t_1) \\ p(t_1) \end{bmatrix}$};
+				
+				% \node (output1) [red, above = 1cm of lstm1] {$\begin{bmatrix} \dot{r}(t_1) \\ \dot{p}(t_1) \end{bmatrix}$};
+				% \draw [arrow, red] (lstm1) -- (output1);
+
+				% \node (lstm2) [LSTMCell, right = of lstm1] {LSTM}; 
+				% % \draw [-latex, red, draw] ([xshift=-0.0cm]lstm2.185) arc[radius=0.4cm, start angle=90, end angle=360] node[midway, red, fill=white](){\scriptsize $c(t)$};
+			
+				% \node (input2) [red, below = 1cm of lstm2] {$\begin{bmatrix} r(t_2) \\ p(t_2) \end{bmatrix}$};
+				% \draw [arrow, red] (input2) -- (lstm2);
+				% \node (output2) [red, above = 1cm of lstm2] {$\begin{bmatrix} \dot{r}(t_2) \\ \dot{p}(t_2) \end{bmatrix}$};
+				% \draw [arrow, red] (lstm2) -- (output2);
+
+				% % Recurrent connections
+				% \draw [arrow, red] (lstm0) -- node[above]{$c(t)$} (lstm1);
+				% \draw [arrow, red] (lstm1) -- node[above]{$c(t)$} (lstm2);
+				
+				% % Time Steps
+				% \node (t1)[red, below=0.5cm of input1]{$t_1$};
+				% \node (t2)[red, below=0.5cm of input2]{$t_2$};
+				% \onslide<4->{\draw [arrow, red] (t0) -- node[above]{$\Delta t$} (t1);}
+				% \onslide<5->{\draw [arrow, red] (t1) -- node[above]{$\Delta t$} (t2);}
 			
 			\end{tikzpicture}
 		% }
@@ -364,49 +503,134 @@
 		\item<+-> Use coarse, analytical MD to provide initial and final conditions
 	\end{itemize}
 	\onslide<+->
+	% \begin{figure}[!htbp]
+	% 	\begin{adjustbox}{max width = 0.3\textwidth, height = 0.4\textheight}
+	% 		\begin{tikzpicture}
+	% 			\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
+	% 			\tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
+	% 			\tikzset{node/.style={draw, circle, fill, scale=0.25}}
+				
+	% 			% \node (z0) [node, label={[below, black]{$x(t)$}}] at (0,-0.5) {}; 
+	% 			\node (z0) [node]  at (0,-0.5) {}; 
+	% 			\node (zT) [node] at (5, 0.5) {};
+		
+	% 			\draw[arrow, black] (z0.north) .. controls +(45:5cm) and +(225:5cm) .. node[below left]{$x(t)$} (zT);
+	% 			\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (0,-1) -- (4.9,-1) node [black,midway,yshift=-0.6cm] {$\text{Initial Condition} \rightarrow $};
+				
+	% 			\node (zT1) at (10, -0.5) {};
+	% 			\draw[draw=none] (zT.north) .. controls +(50:3cm) and +(225:3cm) .. node[above right, red]{$\hat{x}(t)$} (zT1)
+	% 			\foreach \t in {33,66,100}
+	% 			{ node[red] (a\t) [pos=\t/100,node,draw=red] {} };
+				
+	% 			\draw[red, dotted, arrow] (zT) to node[below, red] {} (a33);
+	% 			\draw[red, dotted, arrow] (a33) to node[below left, red] {} (a66);
+	% 			\draw[red, dotted, arrow] (a66) to (a100);
+		
+	% 			% \node (reala100)[node] at ($(a100)+(0,1.0)$) {};
+	% 			% \draw[black, dotted, arrow, shorten >= 2pt] (a66) to node[above, black] {\scriptsize $dx(t)$} (reala100);
+	% 			% \draw[{Bar[]}-{Bar[]}, red, dashed, shorten >= 3pt, shorten <= 3pt] (a100) to node[right]{$\mathcal{L}$} (reala100);
+	% 			\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (5.1,-1) -- (10,-1) node [red,midway,yshift=-0.6cm] {ML-MD Prediction};
+		
+	% 			\node (zT2)[node] at (14, 1) {};
+	% 			\draw[arrow, black] (a100.east) .. controls +(20:2cm) and +(135:2cm) .. node[above left] {$x(t)$} (zT2);
+	% 			\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (10.1,-1) -- (13.9,-1) node [black,midway,yshift=-0.6cm] {$\leftarrow \text{Final} \ \ | \ \text{Initial} \rightarrow$};
+				
+	% 			\node (zT3) [label={[above=0.1cm, red]{$x(t)$}}] at (18, 0.5) {};
+	% 			\draw[draw=none] (zT2.north) .. controls +(300:3cm) and +(225:3cm) .. node[above right, red]{} (zT3)
+	% 			\foreach \t in {33,66,100}
+	% 			{ node[red] (b\t) [pos=\t/100,node,draw=red] {} };
+				
+	% 			% \draw[red, dotted, arrow] (zT2) to node[above right, red] {123} (b33);
+	% 			\draw[red, dotted, arrow] (zT2) to (b33);
+	% 			\draw[red, dotted, arrow] (b33) to (b66);
+	% 			\draw[red, dotted, arrow] (b66) to (b100);
+		
+	% 			\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (14.1,-1) -- (18.1,-1) node [red,midway,yshift=-0.6cm] {ML-MD Prediction};
+	% 		\end{tikzpicture}
+	% 	\end{adjustbox}
+	% 	\end{figure}	
 	\begin{figure}[!htbp]
-		\begin{adjustbox}{max width = 0.3\textwidth, height = 0.4\textheight}
-			\begin{tikzpicture}
-				\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
-				\tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
-				\tikzset{node/.style={draw, circle, fill, scale=0.25}}
+		\begin{adjustbox}{max width = 0.5\textwidth, height = 0.5\textheight}
+			\begin{tikzpicture}[scale=2]
+
+				\tikzset{simpoint/.style={circle, minimum width=7, inner sep=0, black, fill}}
 				
-				% \node (z0) [node, label={[below, black]{$x(t)$}}] at (0,-0.5) {}; 
-				\node (z0) [node]  at (0,-0.5) {}; 
-				\node (zT) [node] at (5, 0.5) {};
-		
-				\draw[arrow, black] (z0.north) .. controls +(45:5cm) and +(225:5cm) .. node[below left]{$x(t)$} (zT);
-				\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (0,-1) -- (4.9,-1) node [black,midway,yshift=-0.6cm] {$\text{Initial Condition} \rightarrow $};
+				\draw [-latex, ultra thick, black] (0,-0.1) -- (0,2) node[at end, left] {};
+				\draw [-latex, ultra thick, black] (-0.1,0) -- node[at end, below=0.5cm] {\large Time} (6.5,0);
+			
+
+				\onslide<4->{
+				\node[simpoint] (t0) at (0.1,0.1){};
+				\node[simpoint] (t1) at (1.5,1.5){};
+				\node[simpoint] (t2) at (3.,0.25){};
+				\node[simpoint] (t3) at (4.5,1.1){};
+				\node[simpoint] (t4) at (6.,1.5){};
+			
+				\draw[black, thick] (t0) to (t1) to (t2) to (t3) to (t4);
+				\draw[black, thick, dashed] (t0) |- (0,0);
+				\draw[black, thick, dashed] (t1) |- (0,0);
+				\draw[black, thick, dashed] (t2) |- (0,0);
+				\draw[black, thick, dashed] (t3) |- (0,0);
+				\draw[black, thick, dashed] (t4) |- (0,0);
+
+				\draw[{Bar[]}-{Bar[]}, ultra thick] (1.5, -0.25) -- node [below]{\large $\Delta t$} (3, -0.25);
+				\node[above= 0.5cm of t2] () {\huge $x(t)$};
+			
+				\draw [red, thick] (0.1, 0.1)   to [out=60, in=180] (1.5,1.5)
+				to [out=0, in=180] (3,0.25)
+				to [out=0, in=135] (6,1.5)
+				to [out=315, in=135] ++(315:0.5cm);
+
+				\node[red, right= 0.75cm of t1] () {\huge $\hat{x}(t)$};
+				\draw[black, thick] (t0) to (t1) to (t2) to (t3) to (t4);
+				\draw[black, thick, dashed] (t0) |- (0,0);
+				\draw[black, thick, dashed] (t1) |- (0,0);
+				\draw[black, thick, dashed] (t2) |- (0,0);
+				\draw[black, thick, dashed] (t3) |- (0,0);
+				\draw[black, thick, dashed] (t4) |- (0,0);
+				}
+
+				\onslide<6->{
+				\draw[thick] (4.25,0.9) rectangle ++(2,1);
+				% \node[anchor=south west] (box) at (4.25,0.9) [draw,thick,minimum width=2pt,minimum height=1pt] {};
+			
+				\node[above= 4cm of t2] (zoom) {% <- this 'right of' is inherited; how to avoid?
+				\begin{tikzpicture}[scale=3, thick]
+					\clip (4.25,0.9) rectangle ++(2,1.5);
+					\draw[ultra thick] (4.25,0.9) rectangle ++(2,1.5);
+					\draw [red, thick] (0.1, 0.1)   to [out=0, in=180] (3,0.25)
+													to [out=0, in=135] (6,1.5)
+													to [out=315, in=135] ++(315:0.5cm);
+			
+					\node[simpoint] (t3) at (4.5,1.03){};
+					\node[simpoint] (t4) at (6.,1.44){};
+					\draw[black, thick] (t3) to (t4);
+					\onslide<7->{
+					\draw [red, thick, -latex] (4.5, 1.15) to [out=43, in=190] (5.5,1.8);
+					}
+					\onslide<8->{
+					\draw [red, thick, -latex] (6, 1.4) to [out=130, in=45] (5.,1.35);
+					}
+			
+					\draw[black, thick] (4.5, 2.) to (6, 2.);
+					\foreach \x in {4.5,5.,5.5,6.}
+						\draw[black, thick] (\x,1.9) -- (\x,2.1);
+			
+					\draw[red, thick] (5, 2.) to (5.5, 2.);
+					\foreach \x in {5.,5.5,}
+						\draw[red, thick] (\x,1.9) -- (\x,2.1);
+					
+					\node[red, thick] at (5.25, 2.1) {$\Delta \tau$};
+					\draw[black, thick, dashed] (4.5, 2.0) |- (t3);
+					\draw[black, thick, dashed] (6, 2.0) |- ($(t4)+(0, -0.1)$);
+			
+				\end{tikzpicture}
+				};
 				
-				\node (zT1) at (10, -0.5) {};
-				\draw[draw=none] (zT.north) .. controls +(50:3cm) and +(225:3cm) .. node[above right, red]{$\hat{x}(t)$} (zT1)
-				\foreach \t in {33,66,100}
-				{ node[red] (a\t) [pos=\t/100,node,draw=red] {} };
-				
-				\draw[red, dotted, arrow] (zT) to node[below, red] {} (a33);
-				\draw[red, dotted, arrow] (a33) to node[below left, red] {} (a66);
-				\draw[red, dotted, arrow] (a66) to (a100);
-		
-				% \node (reala100)[node] at ($(a100)+(0,1.0)$) {};
-				% \draw[black, dotted, arrow, shorten >= 2pt] (a66) to node[above, black] {\scriptsize $dx(t)$} (reala100);
-				% \draw[{Bar[]}-{Bar[]}, red, dashed, shorten >= 3pt, shorten <= 3pt] (a100) to node[right]{$\mathcal{L}$} (reala100);
-				\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (5.1,-1) -- (10,-1) node [red,midway,yshift=-0.6cm] {ML-MD Prediction};
-		
-				\node (zT2)[node] at (14, 1) {};
-				\draw[arrow, black] (a100.east) .. controls +(20:2cm) and +(135:2cm) .. node[above left] {$x(t)$} (zT2);
-				\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (10.1,-1) -- (13.9,-1) node [black,midway,yshift=-0.6cm] {$\leftarrow \text{Final} \ \ | \ \text{Initial} \rightarrow$};
-				
-				\node (zT3) [label={[above=0.1cm, red]{$x(t)$}}] at (18, 0.5) {};
-				\draw[draw=none] (zT2.north) .. controls +(300:3cm) and +(225:3cm) .. node[above right, red]{} (zT3)
-				\foreach \t in {33,66,100}
-				{ node[red] (b\t) [pos=\t/100,node,draw=red] {} };
-				
-				% \draw[red, dotted, arrow] (zT2) to node[above right, red] {123} (b33);
-				\draw[red, dotted, arrow] (zT2) to (b33);
-				\draw[red, dotted, arrow] (b33) to (b66);
-				\draw[red, dotted, arrow] (b66) to (b100);
-		
-				\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (14.1,-1) -- (18.1,-1) node [red,midway,yshift=-0.6cm] {ML-MD Prediction};
+				\draw[thick] ($(4.24, 0.9)+(0,1)$) -- ($(zoom.south west)+(0.05, 0.09)$);
+				\draw[thick] ($(4.24, 0.9)+(2,1)$) -- ($(zoom.north east)+(-0.05, -0.09)$);
+				}
+			
 			\end{tikzpicture}
 		\end{adjustbox}
 		\end{figure}	
@@ -429,20 +653,29 @@
 			\begin{tikzpicture}
 			\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
 			\tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
-			\tikzset{node/.style={draw, circle, fill, red, scale=0.25}}
+			\tikzset{node/.style={draw, circle, fill, scale=0.25}}
 
-			\clip (-0.5,3) rectangle (10,-3);
+			\clip (-0.5,3) rectangle (11,-3);
+
+			\onslide<4->{
 			
-			\node (z0) [node, label={[below, red]{$x(t_0)$}}] at (0,-0.5) {}; 
-			\node (zT) [node, label={[right=0.1cm, red]{$x(t_1)$}}] at (9, 0.5) {};
+			\node (z0) [node, label={[below]{$x(t_0)$}}] at (0,-0.5) {}; 
+			\node (zT) [node, label={[right=0.1cm]{$x(t_1)$}}] at (9, 0.5) {};
 			\draw[arrow, black] (z0.north) .. controls +(45:10cm) and +(225:10cm) .. node[below left]{$x(t)$} (zT);
+			}
+			
+			\onslide<5->{
+			\draw[arrow, dotted, red] (z0.north) .. controls +(50:10cm) and +(225:8cm) .. node[above right]{$\overrightarrow{\hat{x}(t)}$} ($(zT)+(0cm,1cm)$);
+			}
+			\onslide<6->{
+			\draw[arrow, dotted, blue] (zT.south) .. controls +(230:10cm) and +(45:8cm) .. node[below left]{$\overleftarrow{\hat{x}(t)}$}($(z0)+(0cm,-1cm)$);
+			}
+
+			\onslide<7->{
 			\draw[shorten >= 5pt, shorten <= 5pt, , red, thick, path fading=east] (z0.north) .. controls +(50:10cm) and +(230:9.5cm) .. node[above right]{$\hat{x}(t)$} (zT);
 			\draw[shorten >= 5pt, shorten <= 5pt, blue!50, thick, path fading=west, opacity=0.8] (z0.north) .. controls +(50:10cm) and +(230:9.5cm) .. node[above right]{$\hat{x}(t)$} (zT);
-			
-			\draw[arrow, dotted, red] (z0.north) .. controls +(50:10cm) and +(225:8cm) .. node[above right]{$\overrightarrow{\hat{x}(t)}$} ($(zT)+(0cm,1cm)$);
-			
-			\draw[arrow, dotted, blue] (zT.south) .. controls +(230:10cm) and +(45:8cm) .. node[below left]{$\overleftarrow{\hat{x}(t)}$}($(z0)+(0cm,-1cm)$);
-		
+			}
+
 			\end{tikzpicture}
 		% }
 		\end{adjustbox}
@@ -546,6 +779,75 @@
 		% \caption{I don't know how to interpret these plots ...}
 		% \label{fig:interatomisticdistances}
 	\end{figure}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Future Work}
+	\begin{itemize}
+		\item<+-> Adaptively switch between simulation and ML prediction
+		\item<+-> Regularly monitor ML prediction performance with parallel simulation 
+		\item<+-> Leverage speed of ML prediction for smooth sub-trajectories
+	\end{itemize}
+	\begin{figure}[!htbp]
+		\begin{adjustbox}{max width = 0.3\textwidth, height = 0.4\textheight}
+			\begin{tikzpicture}
+				\tikzset{arrow/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
+				\tikzset{diff/.style={-latex, shorten >= 5pt, shorten <= 5pt}}
+				\tikzset{node/.style={draw, circle, fill, scale=0.25}}
+				
+				\onslide<4->{
+				\node (z0) [node]  at (0,-0.5) {}; 
+				\node (zT) [node] at (5, 0.5) {};
+		
+				\draw[arrow, black] (z0.north) .. controls +(45:5cm) and +(225:5cm) .. node[below left]{$x(t)$} (zT);
+				\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (0,-1) -- (4.9,-1) node [black,midway,yshift=-0.6cm] {\footnotesize Training Trajectory};
+				}
+
+				\onslide<5->{
+				\node (zT1) at (10, -0.5) {};
+				\draw[draw=none] (zT.north) .. controls +(50:3cm) and +(225:3cm) .. node[above right, red]{$\hat{x}(t)$} (zT1)
+				\foreach \t in {33,66,100}
+				{ node[red] (a\t) [pos=\t/100,node,draw=red] {} };
+				
+				\draw[red, dotted, arrow] (zT) to node[below, red] {} (a33);
+				\draw[red, dotted, arrow] (a33) to node[below left, red] {} (a66);
+				\draw[red, dotted, arrow] (a66) to node[below, red] {\scriptsize $\widehat{\dot{x}}(t)$} (a100);
+				}
+
+				\onslide<6->{
+					\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (5.1,-1) -- (10,-1) node [red,midway,yshift=-0.6cm] {\footnotesize Prediction Trajectory};
+				}
+
+				\onslide<7->{
+				\node (reala100)[node] at ($(a100)+(0,1.0)$) {};
+				\draw[black, dotted, arrow, shorten >= 2pt] (a66) to node[above, black] {\scriptsize $\dot{x}(t)$} (reala100);
+				\draw[{Bar[]}-{Bar[]}, red, dashed, shorten >= 3pt, shorten <= 3pt] (a100) to node[right]{$\mathcal{L}$} (reala100);
+				
+				}
+				
+				\onslide<8->{
+				\node (zT2)[node] at (14, 1) {};
+				\draw[arrow, black] (a100.east) .. controls +(20:2cm) and +(135:2cm) .. node[above left] {$x(t)$} (zT2);
+				\draw [decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (10.1,-1) -- (13.9,-1) node [black,midway,yshift=-0.6cm] {\footnotesize Recalibration Trajectory};
+				}
+
+				\onslide<9->{
+				\node (zT3) [label={[above=0.1cm, red]{$x(t)$}}] at (18, 0.5) {};
+				\draw[draw=none] (zT2.north) .. controls +(300:3cm) and +(225:3cm) .. node[above right, red]{} (zT3)
+				\foreach \t in {33,66,100}
+				{ node[red] (b\t) [pos=\t/100,node,draw=red] {} };
+				
+				% \draw[red, dotted, arrow] (zT2) to node[above right, red] {123} (b33);
+				\draw[red, dotted, arrow] (zT2) to (b33);
+				\draw[red, dotted, arrow] (b33) to (b66);
+				\draw[red, dotted, arrow] (b66) to (b100);
+		
+				\draw [red, decorate,decoration={brace,amplitude=10pt, mirror}, xshift=-4pt, yshift=0pt] (14.1,-1) -- (18.1,-1) node [red,midway,yshift=-0.6cm] {\footnotesize Prediction Trajectory};
+				}
+
+			\end{tikzpicture}
+		\end{adjustbox}
+		\end{figure}	
 \end{frame}
 
 \end{document}
