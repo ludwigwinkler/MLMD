@@ -9,6 +9,7 @@ __pycache__/
 #Excluded folders
 /data/*
 experiments/ckpt/*
+experiments/checkpoints/*
 experiments/ckpt/*.ckpt
 /experiments/wandb/*
 /experiments/Old/*

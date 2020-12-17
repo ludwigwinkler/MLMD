@@ -1,4 +1,4 @@
-import os, shutil
+import os, shutil, inspect
 from typing import List, Optional
 from os import listdir
 from os.path import isfile, join, isdir
@@ -121,9 +121,6 @@ class TimeSeries_DataSet(Dataset):
 
 		y0 = traj[t0:(t0 + self.input_length)]  # selecting corresponding startin gpoint
 		target = traj[t0:(t0 + total_length)]  # snippet of trajectory
-
-		if self.input_length == 1:
-			y0.squeeze_(0)
 
 		return y0, output_length, target
 
@@ -366,6 +363,7 @@ class Sequential_TimeSeries_DataSet(Dataset):
 
 		target = traj  # snippet of trajectory
 		assert F.mse_loss(y0, target[:self.input_length]) == 0, f'{F.mse_loss(y0, target[0])=}'
+		# if self.input_length == 1: y0.squeeze_(0)
 
 		return y0, self.output_length, target
 
@@ -373,31 +371,7 @@ class Sequential_TimeSeries_DataSet(Dataset):
 		return self.data.shape[0]
 
 
-class SinCos_DataModule(LightningDataModule):
-
-	def __init__(self):
-
-		self.prepare_data()
-
-	def prepare_data(self, *args, **kwargs):
-
-		t = torch.linspace(0,10,50).reshape(1,-1,1)
-
-		x = torch.cat([t.cos(), t.sin()], dim=-1)
-		v = (x[:,1:] - x[:,:-1])
-
-		self.data = torch.cat([x[:,:-1,:],v], dim=-1)
-
-		assert self.data.dim()==3
-		assert self.data.shape[-1]==4
-
-	def setup(self):
-		pass
-
 class MD_DataSet(LightningDataModule):
-	'''
-	Benzene: 49862, 72
-	'''
 
 	def __init__(self, hparams):
 
@@ -406,8 +380,6 @@ class MD_DataSet(LightningDataModule):
 		self.hparams = hparams
 
 		self.sequential_sampling=False
-
-		# print("MD_DataSet.__init__() executed")
 
 	def load_and_process_MD_data(self):
 
@@ -473,12 +445,44 @@ class MD_DataSet(LightningDataModule):
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
 
-		dataloader = DataLoader(self.data_train, batch_size=self.hparams.batchsize, shuffle=True, num_workers=self.hparams.num_workers)
+		dataloader = DataLoader(self.data_train, batch_size=self.hparams.batch_size, shuffle=True, num_workers=self.hparams.num_workers)
 
 		return dataloader
 
 	def val_dataloader(self, *args, **kwargs) -> DataLoader:
-		return DataLoader(self.data_val, batch_size=self.hparams.batchsize*2, num_workers=self.hparams.num_workers)
+		return DataLoader(self.data_val, batch_size=self.hparams.batch_size*2, num_workers=self.hparams.num_workers)
+
+	def plot_sequential_prediction(self, y, y0, t0, pred):
+		'''
+		pred: the prediction by the neural network
+		'''
+
+		colors = ['r', 'g', 'b']
+
+		fig = plt.figure(figsize=(30, 10))
+		num_sequential_samples=500
+
+		plt.plot(y[:num_sequential_samples, -3], ls='-', color=colors[0], label='Data')
+		plt.plot(y[:num_sequential_samples, -2], ls='-', color=colors[1])
+		plt.plot(y[:num_sequential_samples, -1], ls='-', color=colors[2])
+		plt.plot(pred[:num_sequential_samples, -3], ls='--', color=colors[0], label='Prediction')
+		plt.plot(pred[:num_sequential_samples, -2], ls='--', color=colors[1])
+		plt.plot(pred[:num_sequential_samples, -1], ls='--', color=colors[2])
+
+		t_y0 = t0[:y0.shape[0]]
+
+		plt.scatter(t_y0, y0[:t_y0.shape[0], -3], color=colors[0], label='Initial and Final Conditions')
+		plt.scatter(t_y0, y0[:t_y0.shape[0], -2], color=colors[1])
+		plt.scatter(t_y0, y0[:t_y0.shape[0], -1], color=colors[2])
+		plt.xlabel('t')
+		plt.ylabel('$q(t)$')
+		plt.title(self.hparams.dataset)
+		plt.grid()
+		# plt.xticks(np.arange(0,t_y0.max()))
+		plt.xlim(0, t_y0.max())
+		plt.legend()
+
+		return fig
 
 	def __repr__(self):
 
@@ -599,12 +603,15 @@ class Keto_DFT(MD_DataSet):
 
 		# npz_['R'] = data * self.data_std + self.data_mean
 
-class HMC_DM(LightningDataModule):
+class HMC_DM(MD_DataSet):
 
 	def __init__(self, hparams):
 
 		self.hparams = hparams
+		self.batch_size = self.hparams.batch_size
 		self.data_str = 'HMC'
+
+		super().__init__(hparams)
 
 	def setup(self, *args, **kwargs):
 
@@ -612,7 +619,7 @@ class HMC_DM(LightningDataModule):
 		from MLMD.data.HMC_Data_Generation import HMCData
 
 		num_datasets = 1
-		num_trajectories = 5000
+		num_trajectories = 500
 		num_means = 5
 		trajectory_stepsize = 0.2
 		dist_mean_min_max = 4
@@ -644,22 +651,23 @@ class HMC_DM(LightningDataModule):
 			X_grid = data_gen.X_grid
 			Y_grid = data_gen.Y_grid
 
-		data = torch.cat(trajectories, dim=0).squeeze(0)
-		surfaces = torch.cat(surfaces, dim=0)
-		means = torch.cat(means, dim=0)
-		covars = torch.cat(covars, dim=0)
+		self.data = torch.cat(trajectories, dim=0).squeeze(0)
+		self.surfaces = torch.cat(surfaces, dim=0)
+		self.means = torch.cat(means, dim=0)
+		self.covars = torch.cat(covars, dim=0)
 
-		assert data.dim() == 3
+		assert self.data.dim() == 3
+		assert self.data.shape==(num_trajectories, num_steps+1, 4), f"{self.data.shape=}"
 
-		self.data = (data - data.mean(dim=[0, 1])) / (data.std(dim=[0, 1]) + 1e-3)
+		self.data_norm = (self.data - self.data.mean(dim=[0, 1])) / (self.data.std(dim=[0, 1]) + 1e-3)
 
-		val_split = int(data.shape[1] * self.hparams.val_split)
-		data_train, data_val = data[:, :val_split], data[:, val_split:]
+		val_split = int(self.data.shape[1] * self.hparams.val_split)
+		data_train, data_val = self.data_norm[:, :val_split], self.data_norm[:, val_split:]
 
-		self.y_mu = data_train.data.mean(dim=[0, 1]).to(device)
-		self.y_std = data_train.data.std(dim=[0, 1]).to(device)
+		self.y_mu = data_train.mean(dim=[0, 1]).to(device)
+		self.y_std = data_train.std(dim=[0, 1]).to(device)
 
-		self.dy = (data_train.data[:, 2:, :] - data_train.data[:, :-2, :]) / 2
+		self.dy = (data_train[:, 2:, :] - data_train[:, :-2, :]) / 2
 		self.dy_mu = self.dy.mean(dim=[0, 1]).unsqueeze(0).to(device)  # shape = [bs, f]
 		self.dy_std = self.dy.std(dim=[0, 1]).unsqueeze(0).to(device)  # shape = [bs, f]
 
@@ -688,10 +696,40 @@ class HMC_DM(LightningDataModule):
 
 	def train_dataloader(self, *args, **kwargs) -> DataLoader:
 		# print(f" @train_dataloader(): {self.data_train.data.shape=}")
-		return DataLoader(self.data_train, batch_size=self.hparams.batchsize, shuffle=True)
+		return DataLoader(self.data_train, batch_size=self.batch_size, shuffle=True)
 
 	def val_dataloader(self, *args, **kwargs) -> DataLoader:
-		return DataLoader(self.data_val, batch_size=self.hparams.batchsize, shuffle=True)
+		return DataLoader(self.data_val, batch_size=self.batch_size, shuffle=True)
+
+	def plot_sequential_prediction(self, y, y0, t0, pred):
+		'''
+		pred: the prediction by the neural network
+		'''
+
+		colors = ['r', 'g', 'b']
+
+		fig = plt.figure(figsize=(30, 10))
+		num_sequential_samples = 500
+
+		plt.plot(y[:num_sequential_samples, -1], ls='-', color=colors[0], label='Data')
+		plt.plot(y[:num_sequential_samples, -2], ls='-', color=colors[1])
+		plt.plot(pred[:num_sequential_samples, -1], ls='--', color=colors[0], label='Prediction')
+		plt.plot(pred[:num_sequential_samples, -2], ls='--', color=colors[1])
+
+		t_y0 = t0[:y0.shape[0]]
+
+		plt.scatter(t_y0, y0[:t_y0.shape[0], -1], color=colors[0], label='Initial and Final Conditions')
+		plt.scatter(t_y0, y0[:t_y0.shape[0], -2], color=colors[1])
+
+		plt.xlabel('t')
+		plt.ylabel('$q(t)$')
+		plt.title(self.hparams.dataset)
+		plt.grid()
+		# plt.xticks(np.arange(0,t_y0.max()))
+		plt.xlim(0, t_y0.max())
+		plt.legend()
+
+		return fig
 
 	def __repr__(self):
 		return f'{self.data_str}: {self.data.shape} features'
@@ -716,8 +754,6 @@ def load_dm_data(hparams):
 
 	elif data_str in ['hmc']:
 		dm = HMC_DM(hparams)
-	elif data_str=='sincos':
-		dm = SinCos_DataModule()
 	else:
 		exit(f"No valid dataset provided ...")
 
@@ -735,24 +771,6 @@ def load_dm_data(hparams):
 	print(dm)
 
 	return dm
-
-
-def generate_toy_trajectory(_num_samples=100, _time_length=2 * np.pi, _plot=True):
-	t = torch.linspace(0, _time_length, _num_samples)
-
-	x = torch.sin(t)
-	dx = torch.cos(t)
-
-	data = torch.cat([x.unsqueeze(-1), dx.unsqueeze(-1)], dim=1).unsqueeze(0)
-
-	if _plot:
-		plt.plot(t, x, label='x')
-		plt.plot(t, dx, label='dx')
-		plt.grid()
-		plt.legend()
-		plt.show()
-
-	return data
 
 
 def plot_MD_data(hparams, batch_pred, batch_y, batch_val_pred, batch_val_y):

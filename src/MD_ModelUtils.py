@@ -239,7 +239,6 @@ class ODEWrapper(torch.nn.Module):
 			dy = self.dy_std * dy + self.dy_mu
 
 		if self.dir == 'backward':
-			# print('@Hamiltonian Wrapper Forward')
 			dy = - dy
 
 		return dy

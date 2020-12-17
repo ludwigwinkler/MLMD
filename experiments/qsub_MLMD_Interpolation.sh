@@ -7,5 +7,5 @@
 #$ -e IO/error.txt
 #$ -o IO/output.txt
 
-python MLMD_Interpolation.py -pct_train_data $1 -model $2 -logger True -train_data $3 -plot False -output_length 5
+python MLMD_Interpolation.py -model $2 -logger True -dataset $3 -show False
 

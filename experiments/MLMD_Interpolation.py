@@ -46,7 +46,7 @@ seed_everything(123)
 
 from MLMD.src.MD_AtomGeometry import Atom, compute_innermolecular_distances
 from MLMD.src.MD_PL_CallBacks import CustomModelCheckpoint
-from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM
+from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM, MD_ODE_TorchDyn
 from MLMD.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
 from MLMD.src.MD_HyperparameterParser import HParamParser
 from MLMD.src.MD_DataUtils import load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
@@ -57,9 +57,8 @@ class Model(LightningModule):
 
 	def __init__(self, scaling, **kwargs):
 		super().__init__()
-		self.save_hyperparameters()
 
-		# self.scaling = scaling
+		self.save_hyperparameters()
 
 		if self.hparams.model == 'bi_rnn':
 			self.model = MD_BiDirectional_RNN(hparams=self.hparams, scaling=scaling)
@@ -76,12 +75,14 @@ class Model(LightningModule):
 		elif self.hparams.model == 'hamiltonian':
 			self.model = MD_Hamiltonian(hparams=self.hparams, scaling=scaling)
 		elif self.hparams.model == 'ode':
-			self.model = MD_ODE(hparams=self.hparams, scaling=scaling)
+			# self.model = MD_ODE(hparams=self.hparams, scaling=scaling)
+			self.model = MD_ODE_TorchDyn(hparams=self.hparams, scaling=scaling)
 		else:
 			exit(f'Wrong model: {self.hparams.model}')
 
 		# any argument in the init() will be recorded, so we have to remove the tensor components or else the loggers will complain about gpu tensors
 		del self.hparams['scaling']
+
 
 	def load_model_and_optim_state_dicts(self):
 		'''
@@ -89,19 +90,17 @@ class Model(LightningModule):
 		PyTorch Lightnings load_from_checkpoint also changes the hyperparameters unfortunately, which we don't want
 		'''
 
-		print(f"Looking for checkpoint ... ", end='')
-		ckptpath = f'ckpt/{self.hparams.ckptname}.ckpt'
-		if os.path.exists(ckptpath):
-			print(f"Found at {ckptpath} ... ", end='')
-
-			load_weight = True
-			load_optim = False
-
-			ckpt = torch.load(ckptpath, map_location=device)
-			if load_weight:
-				self.load_state_dict(ckpt['state_dict'], strict=True)
-				print(f"and loaded!")
-			if load_optim: self.trainer.optimizers[0].load_state_dict(ckpt['optimizer_states'][0])
+		if self.hparams.load_pretrained:
+			print(f"Looking for checkpoint ... ", end='')
+			state_dict_path = f"{os.getcwd()}/ckpt/{hparams.ckptname}.state_dict"
+			if os.path.exists(state_dict_path):
+				print(f"Found at {state_dict_path} ... ", end='')
+				state_dict = torch.load(state_dict_path, map_location=device)
+				try:
+					self.model.load_state_dict(state_dict, strict=True);
+					print(f"and loaded!")
+				except:
+					print(f" but couldn't load.")
 
 	def on_fit_start(self):
 
@@ -109,8 +108,12 @@ class Model(LightningModule):
 			self.load_model_and_optim_state_dicts()
 
 	def forward(self, t, x):
-
-		return self.model(t, x)
+		'''
+		x.shape = [BS, InputLength, F]
+		out.shape = [BS, InputLength+OutputLength, F]
+		'''
+		out = self.model(t, x)
+		return out
 
 	def training_step(self, batch, batch_idx):
 
@@ -118,12 +121,12 @@ class Model(LightningModule):
 		batch_pred = self.forward(batch_t[0], batch_y0)
 
 		batch_loss = self.model.criterion(batch_pred, batch_y, mode='t')
+		loss = batch_loss
+		batch_loss = batch_loss.detach()
 		
-		# print(batch_t[0])
-		self.log('Train/t', batch_t[0], prog_bar=True)
-		self.log('Train/MSE', batch_loss, prog_bar=True)
+		self.log_dict({'Train/t': batch_t[0], 'Train/MSE': batch_loss}, prog_bar=True)
 
-		return {'loss': batch_loss, 'Train/MSE': batch_loss}
+		return {'loss': loss, 'Train/MSE': batch_loss}
 
 	def on_train_batch_end(self, outputs: Any, batch: Any, batch_idx: int, dataloader_idx: int) -> None:
 
@@ -132,14 +135,7 @@ class Model(LightningModule):
 
 	def training_epoch_end(self, outputs):
 		val_loss = torch.stack([x['Train/MSE'] for x in outputs]).mean()
-		self.log('Train/Epoch_MSE', val_loss, prog_bar=True)
-
-		if False and self.hparams.dataset in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
-			angle = torch.stack([x['Angle'] for x in outputs]).mean()
-			dist = torch.stack([x['Dist'] for x in outputs]).mean()
-
-			# self.plot_velocity_histogram()
-			# self.plot_predictions()
+		self.log('Train/EpochMSE', val_loss, prog_bar=True)
 
 	def validation_step(self, batch, batch_idx):
 		batch_y0, batch_t, batch_y = batch
@@ -147,68 +143,14 @@ class Model(LightningModule):
 		batch_pred = self.forward(batch_t[0], batch_y0)
 		batch_loss = self.model.criterion(batch_pred, batch_y, mode='t')
 
-		if False and self.hparams.dataset in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
-			batch_pred_angles, batch_pred_distances = Atom(batch_pred, hparams).compute_MD_geometry()
-			batch_angles, batch_distances = Atom(batch_y, hparams).compute_MD_geometry()
-
-			batch_angle_loss = F.mse_loss(batch_pred_angles, batch_angles)
-			batch_distance_loss = F.mse_loss(batch_pred_distances, batch_distances)
-
 		return {'Val/MSE': batch_loss, 'Val/t': batch_t[0]}
 
 	def validation_epoch_end(self, outputs):
 		val_loss = torch.stack([x['Val/MSE'] for x in outputs]).mean()
-		self.log_dict({'Val/MSE':val_loss, 'Val/t': self.hparams.output_length_val}, prog_bar=True)
-
-		if False and self.hparams.dataset in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
-			angle = torch.stack([x['Angle'] for x in outputs]).mean()
-			dist = torch.stack([x['Dist'] for x in outputs]).mean()
+		self.log_dict({'Val/EpochMSE':val_loss, 'Val/t': self.hparams.output_length_val}, prog_bar=True)
 
 	def configure_optimizers(self):
 		return torch.optim.Adam(self.parameters())
-
-	def plot_predictions(self):
-		batch = next(self.trainer.datamodule.val_dataloader().__iter__())
-		batch_y0, batch_t, batch_y = batch
-		pos, vel = batch_y.chunk(chunks=2, dim=-1)
-		with torch.no_grad(): pred = self.forward(batch_t[0], batch_y0)
-		pred_pos, pred_vel = pred.chunk(chunks=2, dim=-1)
-		bs, t, dim = vel.shape
-
-		vel = vel.reshape(bs, t, -1, 3)
-		pos = pos.reshape(bs, t, -1, 3)
-		pred_vel = pred_vel.reshape(bs, t, -1, 3)
-		pred_pos = pred_pos.reshape(bs, t, -1, 3)
-		num_atoms = pred_vel.shape[2]
-
-		# print(f"{pred_vel.shape=}")
-
-		fig, axs = plt.subplots(2, 2, sharex=True)
-		axs = axs.flatten()
-
-		fig.suptitle('Vel')
-		axs[0].plot(pred_vel[0, :, 0, :], ls='--')
-		axs[1].plot(pred_vel[0, :, 1, :], ls='--')
-		axs[2].plot(pred_vel[0, :, 2, :], ls='--')
-
-		axs[0].plot(vel[0, :, 0, :])
-		axs[1].plot(vel[0, :, 1, :])
-		axs[2].plot(vel[0, :, 2, :])
-		plt.show()
-
-		fig, axs = plt.subplots(2, 2, sharex=True)
-		axs = axs.flatten()
-
-		fig.suptitle('Pos')
-		axs[0].plot(pred_pos[0, :, 0, :], ls='--')
-		axs[1].plot(pred_pos[0, :, 1, :], ls='--')
-		axs[2].plot(pred_pos[0, :, 2, :], ls='--')
-
-		axs[0].plot(pos[0, :, 0, :])
-		axs[1].plot(pos[0, :, 1, :])
-		axs[2].plot(pos[0, :, 2, :])
-
-		plt.show()
 
 	def plot_velocity_histogram(self):
 		if self.hparams.dataset in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
@@ -298,6 +240,41 @@ class Model(LightningModule):
 		if self.hparams.show: plt.show()
 
 	@torch.no_grad()
+	def predict_batches(self, dm=None):
+		'''
+		dm: external datamodule
+		'''
+
+		if dm is None:
+			dm = self.trainer.datamodule # the datamodule that was used for optimization
+
+		y_ = []
+		y0_ = []
+		pred_ = []
+		for i, (y0, t, y) in enumerate(dm.val_dataloader()):
+			y0 = y0.to(device)
+			t = t.to(device)
+			self.model.to(device)
+
+			batch_pred = self.forward(t[0], y0)
+
+			if 'bi' in self.hparams.model:
+				pred_.append(batch_pred[:, self.hparams.input_length:-self.hparams.input_length])
+				y_.append(y[:, self.hparams.input_length:-self.hparams.input_length])
+			else:
+				pred_.append(batch_pred[:,self.hparams.input_length])
+				y_.append(y[:, self.hparams.input_length])
+
+			y0_.append(y0)
+
+			if i == 10: break
+
+		'''Batched predictions [batch_size, timestpes, features]'''
+		pred = torch.cat(pred_, dim=0).cpu().detach()
+		y = torch.cat(y_, dim=0).cpu().detach()
+		y0 = torch.cat(y0_, dim=0).cpu().detach()
+
+	@torch.no_grad()
 	def predict_sequentially(self, dm=None):
 
 		# print("Plotting ...")
@@ -308,7 +285,7 @@ class Model(LightningModule):
 			# data_val = dm.train_dataloader().dataset.data
 			data_val = dm.data_norm
 		assert data_val.dim() == 3
-		num_sequential_samples = np.min([100000000, data_val.shape[1]])
+		num_sequential_samples = np.min([500, data_val.shape[1]])
 
 		if 'bi' in self.hparams.model:
 			'''
@@ -334,6 +311,7 @@ class Model(LightningModule):
 		pred_ = []
 		total_length = 0
 		for y0, t, y in tqdm(dataloader, desc='Predicting Sequentially'):
+
 			y0 = y0.to(device)
 			t = t.to(device)
 			self.model.to(device)
@@ -350,111 +328,97 @@ class Model(LightningModule):
 			total_length += pred_[-1].shape[0]
 			if total_length>num_sequential_samples: break
 
+
 		pred = torch.cat(pred_, dim=0).cpu().detach()
 		y = torch.cat(y_, dim=0).cpu().detach()
 		y0 = torch.cat(y0_, dim=0).cpu().detach()
 
 		assert F.mse_loss(y, data_val[0, :y.shape[0]]) == 0
-		dm.save_prediction(pred, y)
+		if dm is not None: dm.plot_sequential_prediction(y, y0, t_y0, pred)
+		elif dm is None: self.trainer.datamodule.plot_sequential_prediction(y, y0, t_y0, pred)
 
-
-		return pred, y, y0, t_y0, num_sequential_samples
-
-	@torch.no_grad()
-	def plot_sequential_prediction(self, dm=None):
-		'''
-		pred: the prediction by the neural network
-		'''
-		pred, y, y0, t_y0, num_sequential_samples = self.predict_sequentially(dm)
-
-		colors=['r', 'g', 'b']
-
-		fig = plt.figure(figsize=(20,10))
-
-		plt.plot(y[:num_sequential_samples, -3], color=colors[0], label='Data')
-		plt.plot(y[:num_sequential_samples, -2], color=colors[1])
-		plt.plot(y[:num_sequential_samples, -1], color=colors[2])
-		plt.plot(pred[:num_sequential_samples, -3], ls='--', color=colors[0], label='Prediction')
-		plt.plot(pred[:num_sequential_samples, -2], ls='--', color=colors[1])
-		plt.plot(pred[:num_sequential_samples, -1], ls='--', color=colors[2])
-
-		t_y0 = t_y0[:y0.shape[0]]
-
-		plt.scatter(t_y0, y0[:t_y0.shape[0], -3], color=colors[0], label='Initial and Final Conditions')
-		plt.scatter(t_y0, y0[:t_y0.shape[0], -2], color=colors[1], label='Initial and Final Conditions')
-		plt.scatter(t_y0, y0[:t_y0.shape[0], -1], color=colors[2], label='Initial and Final Conditions')
-		plt.xlabel('t')
-		plt.ylabel('$q(t)$')
-		plt.title(self.hparams.dataset)
-		plt.grid()
-		# plt.xticks(np.arange(0,t_y0.max()))
-		plt.xlim(0, t_y0.max())
-		plt.legend()
-
-		return fig
+		return y, y0, t_y0, pred
 
 	def on_fit_end(self):
 
-		self.log('Val/MSE', self.trainer.callbacks[0].best_score, prog_bar=False)
+		# checks that trainer has early_stopping_callback
+		if len(self.trainer.callbacks) > 0:
+			self.log('Val/MSE', self.trainer.callbacks[0].best_score, prog_bar=False)
 
-		if self.hparams.plot:
-			fig = self.plot_sequential_prediction()
+		state_dict_path = f"{os.getcwd()}/ckpt/{hparams.ckptname}.state_dict"
+
+		if self.logger:
+			torch.save(self.model.state_dict(), state_dict_path)
+			assert os.path.exists(state_dict_path) == True
+			self.logger.experiment.save(state_dict_path)
+
+		if self.hparams.plot and self.current_epoch>0:
+			prediction_data = self.predict_sequentially()
+			fig = self.trainer.datamodule.plot_sequential_prediction(*prediction_data)
 			if isinstance(self.logger, WandbLogger):
 				print('Saving image ...')
 				self.logger.experiment.log({'Pred':wandb.Image(fig, caption="Val Prediction")})
 
 			if self.hparams.show: plt.show()
 
-hparams = HParamParser(logname='MD', logger=False, show=True, load_pretrained=True,
-		       model='bi_lstm', dataset=['toluene_dft.npz','hmc', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'][0], batchsize=100,
-		       input_length=1, output_length_train=11, output_length_val=31)
+hparams = HParamParser(logger=True, show=True, load_pretrained=True,
+		       model='bi_lstm', num_layers=3, num_hidden_multiplier=5,
+		       dataset=['hmc','benzene_dft.npz', 'toluene_dft.npz','hmc', 'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'][0],
+		       input_length=3, output_length=20, batch_size=200,
+		       train_traj_repetition=20)
 
 dm = load_dm_data(hparams)
-exit()
+# print(f"{hparams=}")
+# exit()
 scaling = {'y_mu': dm.y_mu, 'y_std': dm.y_std, 'dy_mu': dm.dy_mu, 'dy_std': dm.y_std}
 hparams.__dict__.update({'in_features': dm.y_mu.shape[-1]})
-hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*10})
+hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*hparams.num_hidden_multiplier})
 
 model = Model(scaling, **vars(hparams))
 
-model.load_model_and_optim_state_dicts()
-model.predict_sequentially(dm)
+# model.load_model_and_optim_state_dicts()
+# model.predict_sequentially(dm)
 # model.plot_sequential_prediction(dm)
 # plt.show()
 
-exit()
+# exit()
 
 if hparams.logger is True:
 	os.system('wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5')
-	logger = WandbLogger(project='SeparateIntegrationTimes', entity='mlmd',name=hparams.logname)
+	logger = WandbLogger(project='TestingStuff', entity='mlmd',name=hparams.logname)
 	hparams.__dict__.update({'logger': logger})
 
 early_stop_callback = EarlyStopping(
-	monitor='Val/MSE', mode='min',
-	patience=3,min_delta=0.005,
+	monitor='Val/EpochMSE', mode='min',
+	patience=3,min_delta=0.0001,
 	verbose=True
 )
-model_checkpoint_callback = CustomModelCheckpoint(	filepath=f"ckpt/{hparams.ckptname}",
-					    		monitor='Val/MSE', mode='min',
-							save_top_k=1)
-
-# model = model.load_from_checkpoint(checkpoint_path=f'ckpt/{hparams.ckptname}.ckpt', scaling=scaling)
-# ckpt = torch.load(f'ckpt/{hparams.ckptname}.ckpt')
+# model_checkpoint_callback = CustomModelCheckpoint(	filepath=f"ckpt/{hparams.ckptname}",
+# 					    		monitor='Val/MSE', mode='min',
+# 							save_top_k=1)
 
 trainer = Trainer.from_argparse_args(	hparams,
 				     	max_epochs=2000,
 				     	# min_steps=1000,
 				     	# max_steps=50,
-				     	progress_bar_refresh_rate=5,
+				     	progress_bar_refresh_rate=10,
 				     	callbacks=[early_stop_callback],
 				     	# limit_train_batches=10,
 				     	# limit_val_batches=10,
+					auto_scale_batch_size='power',
 					val_check_interval=1.,
 				     	fast_dev_run=False,
-				     	checkpoint_callback=model_checkpoint_callback,
+				     	# checkpoint_callback=model_checkpoint_callback,
 				     	gpus=torch.cuda.device_count(),
 					distributed_backend="ddp" if torch.cuda.device_count()>1 else None
 				     	)
 
+# print(f"{model.hparams=}")
+# trainer.tune(model, datamodule=dm)
+# print(f"{model.hparams.batch_size=}")
+# exit()
 trainer.fit(model, datamodule=dm)
-
+model.predict_sequentially()
+plt.show()
+# model.plot_sequential_prediction(dm)
+# plt.show()

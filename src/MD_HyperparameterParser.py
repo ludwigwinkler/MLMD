@@ -26,11 +26,12 @@ def HParamParser(	logger=False,
 					'keto_500K_0.2fs.npz'],
 			model='lstm',
 			subsampling=-1,
-			batchsize=10,
+			batch_size=500,
 			train_traj_repetition=1,
 			plot=True, show=False,
-			pct_data_set=1.0,
+			pct_dataset=1.0,
 			num_layers=5,
+			num_hidden_multiplier=10,
 			input_length=3,
 			output_length=5,
 			output_length_train=-1,
@@ -43,7 +44,7 @@ def HParamParser(	logger=False,
 		input_length = 1
 		assert input_length == 1, f'ODE and HNN models can only work with input_length=1, but received {input_length}'
 
-	assert 0 < pct_data_set <= 1.0, f'pct_data_set has to be [0,1], but is {pct_data_set}'
+	assert 0 < pct_dataset <= 1.0, f'pct_data_set has to be [0,1], but is {pct_dataset}'
 
 	hparams = argparse.ArgumentParser(description='parser example')
 	# hparams = ModArgumentParser(description='parser example')
@@ -81,13 +82,13 @@ def HParamParser(	logger=False,
 							       	'keto_300K_0.2fs.npz','keto_300K_1.0fs.npz',
 								'keto_500K_0.2fs.npz'],
 			     default=dataset)
-	hparams.add_argument('-pct_data_set', type=float, default=pct_data_set)
+	hparams.add_argument('-pct_data_set', type=float, default=pct_dataset)
 	hparams.add_argument('-subsampling', type=int, default=subsampling)
 
-	hparams.add_argument('-num_hidden', type=int, default=-1)
+	hparams.add_argument('-num_hidden_multiplier', type=int, default=num_hidden_multiplier)
 	hparams.add_argument('-num_layers', type=int, default=num_layers)
 
-	hparams.add_argument('-batchsize', type=int, default=batchsize)
+	hparams.add_argument('-batch_size', type=int, default=batch_size)
 	hparams.add_argument('-train_traj_repetition', type=int, default=train_traj_repetition)
 	hparams.add_argument('-input_length', type=int, default=input_length)
 

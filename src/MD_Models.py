@@ -9,6 +9,7 @@ from torch.nn import functional as F
 from torch.nn import Sequential, Module
 from torch.nn import Linear, LSTM, RNN
 from torch.nn import Tanh, LeakyReLU, ReLU
+from torchdyn.models import NeuralDE
 
 from torchdiffeq import odeint_adjoint as odeint
 
@@ -32,7 +33,7 @@ class MD_Model:
 	def criterion(self, _pred, _target, mode=None):
 
 		assert _pred.shape==_target.shape, f' {_pred.shape=} VS {_target.shape=}'
-		assert torch.sum(_pred[:,0]- _target[:,0])==0, f" y0's aren't the same"
+		assert torch.sum(_pred[:,:self.hparams.input_length]- _target[:, :self.hparams.input_length])==0, f" y0's aren't the same"
 
 		if mode is None:
 			mode = self.hparams.criterion
@@ -52,8 +53,8 @@ class MD_BiModel:
 
 	def criterion(self, _pred, _target, mode=None):
 		assert _pred.shape == _target.shape, f'{_pred.shape=} {_target.shape=}'
-		assert torch.sum(_pred[:, 0] - _target[:, 0]) == 0, f" y[0] aren't the same"
-		assert torch.sum(_pred[:, -1] - _target[:, -1]) == 0, f" y[-1] aren't the same"
+		assert torch.sum(_pred[:, :self.hparams.input_length] - _target[:, :self.hparams.input_length]) == 0, f" y[0] aren't the same"
+		assert torch.sum(_pred[:, -self.hparams.input_length:] - _target[:, -self.hparams.input_length:]) == 0, f" y[-1] aren't the same"
 
 		if mode is None:
 			# only overwrite mode if its not given
@@ -69,6 +70,25 @@ class MD_BiModel:
 			return F.mse_loss(_pred, _target)
 		else:
 			raise Exception(f'Wrong Criterion chosen: {self.hparams.criterion}')
+
+	def create_adiabatic_convection(self, input_length, output_length, x):
+		'''
+		input_length: scalar
+		output_length: scalar
+		x: input data to forward pass to extract dtype and device
+		For input_length=3 and output_length=3 we have forward_weights=[ 1 1 1 | 0.75, 0.5, 0.25 | 0 0 0 ]
+		For input_length=3 and output_length=4 we have forward_weights=[ 1 1 1 | 0.8, 0.6, 0.4 0.2 | 0 0 0 ]
+		'''
+		forward_weights = torch.linspace(start=1, end=0, steps=output_length+2, dtype=x.dtype, device=x.device)[1:-1]
+		forward_weights = torch.cat([torch.ones(input_length, dtype=x.dtype, device=x.device),
+					     forward_weights,
+					     torch.zeros(input_length, dtype=x.dtype, device=x.device)])
+		backward_weights = forward_weights.flip([0])
+
+		''' [T] -> stack -> [T, 2] -> [1,T,1,2] <=> pred.shape=[BS, T, Feat, 2] '''
+		weights = torch.stack([forward_weights, backward_weights], dim=-1).unsqueeze(0).unsqueeze(-2)
+
+		return weights
 
 class MD_BiDirectional_RNN(Module, MD_BiModel):
 
@@ -192,47 +212,31 @@ class MD_BiDirectional_LSTM(Module, MD_BiModel):
 		assert x.dim()==3
 
 		x1, x2 = torch.chunk(x, chunks=2, dim=1)
+		input_length = x1.shape[1]
+		BS, Feat = x.shape[0], x.shape[2]
 
-		x1_for = x1
-		x2_back = x2.flip([1]) # flip the backward conditioning so that we can simply pass the data forward
+		x1_for, x2_back = x1, x2.flip([1]) # flip the backward conditioning so that we can simply pass the data forward in time
 		assert (x2_back[:,-1,:]==x2[:,0,:]).all()
 
-		total_length = t + 2 * self.hparams.input_length
-		lin_weights = (torch.arange(0, total_length, dtype=x.dtype, device=x.device)) / (total_length - 1)
-		assert lin_weights[0] == 0 and lin_weights[-1] == 1, f'{lin_weights=}'
+		weights = self.create_adiabatic_convection(input_length=input_length, output_length=t, x=x)
 
-		weights = torch.stack([lin_weights.flip([0]), lin_weights], dim=-1)
-		weights = weights / weights.sum(dim=-1, keepdim=True)
-		weights = weights.unsqueeze(-2).to(x.device)
-
-		'''
-		Forwards
-		'''
+		'''Forwards Solution'''
 		pred_for = self.forward_t(t=t+x2.shape[1], x=x1_for)
 
-		'''
-		Backwards
-		'''
+		'''Backwards Solution'''
 		if True:
-			velocity_flip = torch.ones(x2_back.shape[-1], device=x.device)
-			velocity_flip[velocity_flip.shape[-1] // 2:] = -1
+			velocity_flip = torch.ones(x2_back.shape[-1], device=x.device) # [ 1 1 1 1 ]
+			velocity_flip[velocity_flip.shape[-1] // 2:] = -1 # [ 1 1 -1 -1 ]
 			x2_back = x2_back * velocity_flip
 			pred_back = self.forward_t(t=t+x2_back.shape[1], x=x2_back).flip([1])
 			pred_back = pred_back * velocity_flip
-			assert F.mse_loss(pred_back[:, -1], x[:, -1]) == 0., f'{pred_back[0,-1]=} {x[0,-1]=}'
 
 			pred = torch.stack([pred_for, pred_back], dim=-1)
-			weights = weights.expand_as(pred)
 			out = torch.sum(pred * weights, dim=-1)
-
-			# out = torch.sum(pred*weights, dim=-1)
-			# out = pred_back
-
 		else:
 			out = pred_for
 
-
-
+		assert out.shape==(BS, 2*input_length+t, Feat)
 		return out
 
 	def forward_t(self, t, x):
@@ -471,6 +475,53 @@ class MD_ODE(Module, MD_Model):
 		# exit('@MD_ODENet forward')
 		return out
 
+class MD_ODE_TorchDyn(Module, MD_Model):
+
+	def __init__(self, hparams, scaling ):
+
+		Module.__init__(self)
+
+		self.hparams = hparams
+
+		bias = True
+		net = Sequential()
+		net.add_module(name='Layer_0', module=Linear(self.hparams.in_features, self.hparams.num_hidden, bias=bias))
+		net.add_module(name='Activ_0', module=ReLU())
+
+		for layer in range(self.hparams.num_layers):
+			net.add_module(name=f'Layer_{layer+1}', module=Linear(self.hparams.num_hidden, self.hparams.num_hidden, bias=bias))
+			net.add_module(name=f'Activ_{layer+1}', module=ReLU())
+
+		net.add_module(name='Output', module=Linear(self.hparams.num_hidden, self.hparams.in_features, bias=bias))
+
+		net.hparams = self.hparams
+
+		for module in net.modules():
+			module.apply(lambda x: apply_rescaling(x,scale=1.))
+
+		self.y_mu = scaling['y_mu']
+		self.y_std = scaling['y_std']
+		self.dy_mu = scaling['dy_mu']
+		self.dy_std = scaling['dy_std']
+
+		self.net = NeuralDE(func=net, order=1, sensitivity='adjoint', solver='euler')
+
+		self.integrator = IntegratorWrapper(net=self.net, odeint_str = self.hparams.odeint)
+		MD_Model.__init__(self, self.hparams)
+
+	def forward(self, t, x):
+		'''
+		x.shape = [BS, InputLength, F]
+		out.shape = [BS, OutputLength, F]
+		'''
+		assert x.dim()==3
+		assert x.shape[1]==1
+
+		out = self.net.trajectory(x, torch.linspace(0,1, t+1)) # shape=[T, BS, 1, F]
+		out = out.squeeze(-2).permute(1,0,2) # shape: [T, BS, 1, F] -> squeeze(-2) -> [T, BS, F] -> [BS, T, F]
+
+		return out
+
 class MD_ODE2Net(torch.nn.Module):
 
 	def __init__(self, in_features, hparams, y_mu=None, y_std=None, dy_mu=None, dy_std=None, std=None):
@@ -550,7 +601,7 @@ class MD_LSTM(Module, MD_Model):
 
 		self.hparams = hparams
 
-		self.lstm = LSTM(input_size=self.hparams.in_features, hidden_size=hparams.num_hidden, num_layers=hparams.num_layers-1, batch_first=True, dropout=0.2)
+		self.lstm = LSTM(input_size=self.hparams.in_features, hidden_size=hparams.num_hidden, num_layers=hparams.num_layers-1, batch_first=True)
 		self.out_emb = Linear(self.hparams.num_hidden, self.hparams.in_features, bias=True)
 
 		self.y_mu = scaling['y_mu']
@@ -561,30 +612,25 @@ class MD_LSTM(Module, MD_Model):
 		MD_Model.__init__(self, hparams)
 
 	def forward(self, t, x):
-
+		'''
+		:param t:
+		:param x: [x(0), x(1), x(2)]
+		:return:
+		'''
 		if x.dim() == 2: x = x.unsqueeze(1)
 		assert x.dim() == 3
 
-		mode = ['diff', 'autoreg'][0]
-
-		pred, (h,c) = self.lstm(x)
+		pred, (h, c) = self.lstm(x)
 		dx = self.out_emb(pred)
-		'''
-		[y_0 		y_1 		y_2] -> 
-		[y_0 		y_0 + dy_0	y_1+dy_1
-		'''
-		out = torch.cat([x[:, :1, :], x + dx], dim=1) if mode=='diff' else torch.cat([x[:, :1, :], dx], dim=1)
+		# out = torch.cat([x[:, :1, :], x + dx], dim=1)
+		out = torch.cat([x, x[:, -1:, :] + dx[:, -1:, :]], dim=1)
 		for step in range(t - 1):  # because we add the first entry y0 at the beginning
-			pred_t, (h,c) = self.lstm(out[:, -1:], (h,c))
+			pred_t, (h, c) = self.lstm(out[:, -1:], (h, c))
 			dx_t = self.out_emb(pred_t)
+			if self.dy_std is not None:
+				dx_t = self.dy_std * dx_t
 
-			if mode=='diff':
-				# if self.dy_std is not None:
-				# 	dx_t = self.dy_std * dx_t + self.dy_mu
-
-				out = torch.cat([out, out[:, -1:, :] + dx_t], dim=1)
-			else:
-				out = torch.cat([out, dx_t], dim=1)
+			out = torch.cat([out, out[:, -1:, :] + dx_t], dim=1)
 
 		return out
 
