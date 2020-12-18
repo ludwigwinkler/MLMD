@@ -18,7 +18,7 @@ np.set_printoptions(precision=4, suppress=True)
 
 def HParamParser(	logger=False,
 			logname='experiment',
-			logdir='experimentdir',
+			fast_dev_run=False,
 			dataset=[	'ethanol_dft.npz', 'benzene_dft.npz', 'malonaldehyde_dft.npz', 'uracil_dft.npz',
 					'lorenz', 'hmc',
 					'keto_100K_0.2fs.npz',
@@ -44,23 +44,25 @@ def HParamParser(	logger=False,
 		input_length = 1
 		assert input_length == 1, f'ODE and HNN models can only work with input_length=1, but received {input_length}'
 
-	assert 0 < pct_dataset <= 1.0, f'pct_data_set has to be [0,1], but is {pct_dataset}'
+	assert 0 < pct_dataset <= 1.0, f'pct_dataset has to be [0,1], but is {pct_dataset}'
 
 	hparams = argparse.ArgumentParser(description='parser example')
 	# hparams = ModArgumentParser(description='parser example')
 
 	hparams.add_argument('-logger', type=str2bool, default=logger)
 	hparams.add_argument('-logname', type=str, default=logname)
-	hparams.add_argument('-logdir', type=str, default=logdir)
 	hparams.add_argument('-plot', type=str2bool, default=plot)
 	hparams.add_argument('-show', type=str2bool, default=show)
 	hparams.add_argument('-load_pretrained', type=str2bool, default=load_pretrained)
+	hparams.add_argument('-fast_dev_run', type=str2bool, default=fast_dev_run)
+
 
 	hparams.add_argument('-num_workers', type=int, default=4 if torch.cuda.is_available() else 0)
 
 	hparams.add_argument('-odeint', type=str, choices=['explicit_adams', 'fixed_adams' 'adams', 'tsit5', 'dopri5', 'euler', 'midpoint', 'rk4'],
 			     default='rk4')
-	hparams.add_argument('-model', type=str, choices=['hamiltonian', 'ode', 'rnn', 'lstm', 'bi_ode', 'bi_hamiltonian', 'bi_rnn',
+	hparams.add_argument('-model', type=str, choices=['hnn', 'ode', 'rnn', 'lstm', 'ode2',
+							  'bi_ode', 'bi_hnn', 'bi_rnn',
 							  'bi_lstm'], default=model)
 
 	hparams.add_argument('-dataset', type=str, choices=[	'benzene_dft.npz',
@@ -82,7 +84,7 @@ def HParamParser(	logger=False,
 							       	'keto_300K_0.2fs.npz','keto_300K_1.0fs.npz',
 								'keto_500K_0.2fs.npz'],
 			     default=dataset)
-	hparams.add_argument('-pct_data_set', type=float, default=pct_dataset)
+	hparams.add_argument('-pct_dataset', type=float, default=pct_dataset)
 	hparams.add_argument('-subsampling', type=int, default=subsampling)
 
 	hparams.add_argument('-num_hidden_multiplier', type=int, default=num_hidden_multiplier)
@@ -107,13 +109,13 @@ def HParamParser(	logger=False,
 	hparams.output_length_train = hparams.output_length if hparams.output_length_train == -1 else hparams.output_length_train
 	hparams.output_length_val = hparams.output_length if hparams.output_length_val == -1 else hparams.output_length_val
 
-	if 'ode' in hparams.model or 'hamiltonian' in hparams.model:
+	if 'ode' in hparams.model or 'hnn' in hparams.model:
 		if hparams.input_length !=1:
-			print(f"Input length for {model} was {input_length}, changed to 1")
+			print(f"Input length for {hparams.model} was {hparams.input_length}, changed to 1")
 			hparams.input_length =1
 
 	hparams.__dict__.update({'logname': 	hparams.logname + '_' + str(hparams.model)
-					    	+ '_pct' + str(hparams.pct_data_set) + '_' + str(hparams.dataset) +
+					    	+ '_pct' + str(hparams.pct_dataset) + '_' + str(hparams.dataset) +
 			    			'_Ttrain' + str(hparams.output_length_train) + '_Tval' + str(hparams.output_length_val)})
 	hparams.__dict__.update({'ckptname': 	str(hparams.model)+'_'+str(hparams.dataset)+'_TrainT'+str(output_length_train)})
 

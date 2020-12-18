@@ -46,7 +46,7 @@ seed_everything(123)
 
 from MLMD.src.MD_AtomGeometry import Atom, compute_innermolecular_distances
 from MLMD.src.MD_PL_CallBacks import CustomModelCheckpoint
-from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM, MD_ODE_TorchDyn
+from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM, MD_ODE_SecOrder
 from MLMD.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
 from MLMD.src.MD_HyperparameterParser import HParamParser
 from MLMD.src.MD_DataUtils import load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
@@ -55,34 +55,32 @@ from MLMD.src.MD_DataUtils import load_dm_data, QuantumMachine_DFT, Sequential_T
 
 class Model(LightningModule):
 
-	def __init__(self, scaling, **kwargs):
+	def __init__(self, **kwargs):
 		super().__init__()
 
 		self.save_hyperparameters()
 
 		if self.hparams.model == 'bi_rnn':
-			self.model = MD_BiDirectional_RNN(hparams=self.hparams, scaling=scaling)
-		elif self.hparams.model == 'bi_hamiltonian':
-			self.model = MD_BiDirectional_Hamiltonian(hparams=self.hparams, scaling=scaling)
+			self.model = MD_BiDirectional_RNN(hparams=self.hparams)
+		elif self.hparams.model == 'bi_hnn':
+			self.model = MD_BiDirectional_Hamiltonian(hparams=self.hparams)
 		elif self.hparams.model == 'bi_ode':
-			self.model = MD_BiDirectional_ODE(hparams=self.hparams, scaling=scaling)
+			self.model = MD_BiDirectional_ODE(hparams=self.hparams)
 		elif self.hparams.model == 'bi_lstm':
-			self.model = MD_BiDirectional_LSTM(hparams=self.hparams, scaling=scaling)
+			self.model = MD_BiDirectional_LSTM(hparams=self.hparams)
 		elif self.hparams.model == 'rnn':
-			self.model = MD_RNN(hparams=self.hparams, scaling=scaling)
+			self.model = MD_RNN(hparams=self.hparams)
 		elif self.hparams.model == 'lstm':
-			self.model = MD_LSTM(hparams=self.hparams, scaling=scaling)
-		elif self.hparams.model == 'hamiltonian':
-			self.model = MD_Hamiltonian(hparams=self.hparams, scaling=scaling)
+			self.model = MD_LSTM(hparams=self.hparams)
+		elif self.hparams.model == 'hnn':
+			# self.model = MD_Hamiltonian(hparams=self.hparams)
+			self.model = MD_Hamiltonian(hparams=self.hparams)
 		elif self.hparams.model == 'ode':
-			# self.model = MD_ODE(hparams=self.hparams, scaling=scaling)
-			self.model = MD_ODE_TorchDyn(hparams=self.hparams, scaling=scaling)
+			self.model = MD_ODE(hparams=self.hparams, scaling=scaling)
+		elif self.hparams.model == 'ode2':
+			self.model = MD_ODE_SecOrder(hparams=self.hparams, scaling=scaling)
 		else:
 			exit(f'Wrong model: {self.hparams.model}')
-
-		# any argument in the init() will be recorded, so we have to remove the tensor components or else the loggers will complain about gpu tensors
-		del self.hparams['scaling']
-
 
 	def load_model_and_optim_state_dicts(self):
 		'''
@@ -361,27 +359,19 @@ class Model(LightningModule):
 
 			if self.hparams.show: plt.show()
 
-hparams = HParamParser(logger=True, show=True, load_pretrained=True,
-		       model='bi_lstm', num_layers=3, num_hidden_multiplier=5,
+hparams = HParamParser(logger=False, show=True, load_pretrained=True, fast_dev_run=False,
+		       model='ode2', num_layers=3, num_hidden_multiplier=3,
 		       dataset=['hmc','benzene_dft.npz', 'toluene_dft.npz','hmc', 'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'][0],
-		       input_length=3, output_length=20, batch_size=200,
+		       input_length=3, output_length=10, batch_size=200,
 		       train_traj_repetition=20)
 
 dm = load_dm_data(hparams)
-# print(f"{hparams=}")
-# exit()
+
 scaling = {'y_mu': dm.y_mu, 'y_std': dm.y_std, 'dy_mu': dm.dy_mu, 'dy_std': dm.y_std}
 hparams.__dict__.update({'in_features': dm.y_mu.shape[-1]})
 hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*hparams.num_hidden_multiplier})
 
-model = Model(scaling, **vars(hparams))
-
-# model.load_model_and_optim_state_dicts()
-# model.predict_sequentially(dm)
-# model.plot_sequential_prediction(dm)
-# plt.show()
-
-# exit()
+model = Model(**vars(hparams))
 
 if hparams.logger is True:
 	os.system('wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5')
@@ -407,18 +397,13 @@ trainer = Trainer.from_argparse_args(	hparams,
 				     	# limit_val_batches=10,
 					auto_scale_batch_size='power',
 					val_check_interval=1.,
-				     	fast_dev_run=False,
 				     	# checkpoint_callback=model_checkpoint_callback,
 				     	gpus=torch.cuda.device_count(),
 					distributed_backend="ddp" if torch.cuda.device_count()>1 else None
 				     	)
 
-# print(f"{model.hparams=}")
-# trainer.tune(model, datamodule=dm)
-# print(f"{model.hparams.batch_size=}")
-# exit()
 trainer.fit(model, datamodule=dm)
-model.predict_sequentially()
-plt.show()
+# model.predict_sequentially()
+# plt.show()
 # model.plot_sequential_prediction(dm)
 # plt.show()

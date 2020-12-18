@@ -400,15 +400,15 @@ class MD_DataSet(LightningDataModule):
 
 		self.data_norm = (self.data - self.data_mean) / (self.data_std + 1e-8)
 
-		train_data_size = int(self.data.shape[1] * self.hparams.val_split * self.hparams.pct_data_set)
+		train_data_size = int(self.data.shape[1] * self.hparams.val_split * self.hparams.pct_dataset)
 		val_data_size = int(self.data.shape[1]*(1-self.hparams.val_split))
 
 		'''
 		val_split: point in timeseries from where we consider it the validation trajectory
 		'''
 		val_split = int(self.data_norm.shape[1] * self.hparams.val_split)
-		data_train = self.data_norm[:, :int(val_split*self.hparams.pct_data_set)] # future reduce val_split by training percentage
-		data_val = self.data_norm[:, int(val_split * self.hparams.pct_data_set):int(val_split * self.hparams.pct_data_set+val_data_size)]
+		data_train = self.data_norm[:, :int(val_split*self.hparams.pct_dataset)] # future reduce val_split by training percentage
+		data_val = self.data_norm[:, int(val_split * self.hparams.pct_dataset):int(val_split * self.hparams.pct_dataset+val_data_size)]
 
 		self.y_mu 	= data_train.data.mean(dim=[0, 1]).to(device)
 		self.y_std 	= data_train.data.std(dim=[0, 1]).to(device)

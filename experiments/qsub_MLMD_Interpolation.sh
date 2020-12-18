@@ -7,5 +7,5 @@
 #$ -e IO/error.txt
 #$ -o IO/output.txt
 
-python MLMD_Interpolation.py -model $2 -logger True -dataset $3 -show False
+python MLMD_Interpolation.py -model $2 -logger True -dataset $3 -show False -num_hidden_multiplier 10 -num_layers 5
 
