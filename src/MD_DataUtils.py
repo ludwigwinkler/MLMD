@@ -499,9 +499,6 @@ class QuantumMachine_DFT(MD_DataSet):
 
 	def prepare_data(self, *args, **kwargs):
 
-		path_npz = "../data/" + self.data_str
-		# path_pt = "../data/" + self.data_str.split(".")[0] + ".pt"
-
 		url = "http://www.quantum-machine.org/gdml/data/npz/" + self.data_str
 
 		if not os.path.exists('../data/' + self.data_str):
@@ -513,6 +510,7 @@ class QuantumMachine_DFT(MD_DataSet):
 		path_npz = "../data/" + self.data_str
 
 		data = np.load(path_npz)
+
 		try:
 			data = data['R']
 
@@ -520,6 +518,7 @@ class QuantumMachine_DFT(MD_DataSet):
 			print("Error preparing data")
 
 		data = torch.from_numpy(data).float()
+		self.raw_data = data
 
 		pos = data[:-1]
 		vel = (data[1:] - data[:-1])
@@ -528,6 +527,63 @@ class QuantumMachine_DFT(MD_DataSet):
 		vel = vel.flatten(-2, -1).unsqueeze(0)
 
 		self.data = torch.cat([pos, vel], dim=-1)
+
+	def plot_sequential_prediction(self, y, y0, t0, pred):
+		'''
+		pred: the prediction by the neural network
+		'''
+
+		colors = ['r', 'g', 'b']
+
+		assert y.dim()==pred.dim()==2 # [T, F]
+		T = pred.shape[0]
+		num_atoms = pred.shape[-1]//(3*2) # [pos, vel] in three dimensions
+		num_sequential_samples = 500 # number of timesteps to show
+
+		pred_pos, pred_vel = pred.chunk(chunks=2, dim=-1) # [1, T, F] -> [ T, Pos] , [T, Vel]
+		pred_pos = pred_pos.reshape(T, num_atoms, 3)
+		pred_vel = pred_vel.reshape(T, num_atoms, 3)
+
+		pos, vel = y.chunk(chunks=2, dim=-1) # [1, T, F] -> [ T, Pos] , [T, Vel]
+		pos = pos.reshape(T, num_atoms, 3)
+		vel = vel.reshape(T, num_atoms, 3)
+
+		pos0, vel0 = y0.chunk(chunks=2, dim=-1) # [1, T, F] -> [ T, Pos] , [T, Vel]
+		pos0 = pos0.reshape(-1, num_atoms, 3)
+		vel0 = vel0.reshape(-1, num_atoms, 3)
+
+		fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(30,15), sharey=True)
+		fig.suptitle(f"Model {self.hparams.model} on data set {self.hparams.dataset}")
+
+		t0 = t0[:y0.shape[0]]
+
+		for ax, true_, pred_, y0_, c in zip([ax1, ax2], [pos[:,0], vel[:,0]], [pred_pos[:,0], pred_vel[:,0]], [pos0[:,0], vel0[:,0]], ['r', 'g', 'b']):
+
+			ax.plot(true_[:num_sequential_samples, 0], ls='-', color=colors[0], label='Data')
+			ax.plot(true_[:num_sequential_samples, 1], ls='-', color=colors[1])
+			ax.plot(true_[:num_sequential_samples, 2], ls='-', color=colors[2])
+
+			ax.plot(pred_[:num_sequential_samples, 0], ls='--', color=colors[0], label='Prediction')
+			ax.plot(pred_[:num_sequential_samples, 1], ls='--', color=colors[1])
+			ax.plot(pred_[:num_sequential_samples, 2], ls='--', color=colors[2])
+
+			ax.scatter(t0, y0_[:t0.shape[0], 0], color=colors[0], label='Initial and Final Conditions')
+			ax.scatter(t0, y0_[:t0.shape[0], 1], color=colors[1])
+			ax.scatter(t0, y0_[:t0.shape[0], 2], color=colors[2])
+
+
+			ax.grid()
+			ax.set_xlim(0, t0.max())
+
+		ax1.set_ylabel('$r(t)$')
+		ax1.set_title('Positions')
+
+		ax2.set_title('Momenta')
+		ax2.set_ylabel('$p(t)$')
+		ax2.set_xlabel('t')
+		plt.legend()
+
+		return fig
 
 class Keto_DFT(MD_DataSet):
 
@@ -602,6 +658,64 @@ class Keto_DFT(MD_DataSet):
 		np.savez(self.pos_path[:-4]+'.VALPRED'+'.npz', **npz_dict)
 
 		# npz_['R'] = data * self.data_std + self.data_mean
+
+	def plot_sequential_prediction(self, y, y0, t0, pred):
+		'''
+		pred: the prediction by the neural network
+		'''
+
+		# y, y0, t0, pred = y0.cpu(), y0.cpu(), t0.cpu(), pred.cpu()
+
+		colors = ['r', 'g', 'b']
+
+		assert y.dim() == pred.dim() == 2  # [T, F]
+		T = pred.shape[0]
+		num_atoms = pred.shape[-1] // (3 * 2)  # [pos, vel] in three dimensions
+		num_sequential_samples = 500  # number of timesteps to show
+
+		pred_pos, pred_vel = pred.chunk(chunks=2, dim=-1)  # [1, T, F] -> [ T, Pos] , [T, Vel]
+		pred_pos = pred_pos.reshape(T, num_atoms, 3)
+		pred_vel = pred_vel.reshape(T, num_atoms, 3)
+
+		pos, vel = y.chunk(chunks=2, dim=-1)  # [1, T, F] -> [ T, Pos] , [T, Vel]
+		pos = pos.reshape(T, num_atoms, 3)
+		vel = vel.reshape(T, num_atoms, 3)
+
+		pos0, vel0 = y0.chunk(chunks=2, dim=-1)  # [1, T, F] -> [ T, Pos] , [T, Vel]
+		pos0 = pos0.reshape(-1, num_atoms, 3)
+		vel0 = vel0.reshape(-1, num_atoms, 3)
+
+		fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(30, 15), sharey=True)
+		fig.suptitle(f"Model {self.hparams.model} on data set {self.hparams.dataset}")
+
+		t0 = t0[:y0.shape[0]]
+
+		for ax, true_, pred_, y0_, c in zip([ax1, ax2], [pos[:, 0], vel[:, 0]], [pred_pos[:, 0], pred_vel[:, 0]], [pos0[:, 0], vel0[:, 0]],
+						    ['r', 'g', 'b']):
+			ax.plot(true_[:num_sequential_samples, 0], ls='-', color=colors[0], label='Data')
+			ax.plot(true_[:num_sequential_samples, 1], ls='-', color=colors[1])
+			ax.plot(true_[:num_sequential_samples, 2], ls='-', color=colors[2])
+
+			ax.plot(pred_[:num_sequential_samples, 0], ls='--', color=colors[0], label='Prediction')
+			ax.plot(pred_[:num_sequential_samples, 1], ls='--', color=colors[1])
+			ax.plot(pred_[:num_sequential_samples, 2], ls='--', color=colors[2])
+
+			ax.scatter(t0, y0_[:t0.shape[0], 0], color=colors[0], label='Initial and Final Conditions')
+			ax.scatter(t0, y0_[:t0.shape[0], 1], color=colors[1])
+			ax.scatter(t0, y0_[:t0.shape[0], 2], color=colors[2])
+
+			ax.grid()
+			ax.set_xlim(0, t0.max())
+
+		ax1.set_ylabel('$r(t)$')
+		ax1.set_title('Positions')
+
+		ax2.set_title('Momenta')
+		ax2.set_ylabel('$p(t)$')
+		ax2.set_xlabel('t')
+		plt.legend()
+
+		return fig
 
 class HMC_DM(MD_DataSet):
 

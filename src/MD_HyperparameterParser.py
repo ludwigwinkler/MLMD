@@ -17,7 +17,8 @@ np.set_printoptions(precision=4, suppress=True)
 
 
 def HParamParser(	logger=False,
-			logname='experiment',
+			project='arandomproject',
+			experiment=None,
 			fast_dev_run=False,
 			dataset=[	'ethanol_dft.npz', 'benzene_dft.npz', 'malonaldehyde_dft.npz', 'uracil_dft.npz',
 					'lorenz', 'hmc',
@@ -38,7 +39,8 @@ def HParamParser(	logger=False,
 			output_length_val=-1,
 			output_length_sampling=False,
 			criterion=['T', 't'][0],
-			load_pretrained=False
+			load_pretrained=False,
+			max_epochs=200
 		 ):
 	if ('ode' in model or 'hamiltonian' in model) and input_length != 1:
 		input_length = 1
@@ -50,7 +52,9 @@ def HParamParser(	logger=False,
 	# hparams = ModArgumentParser(description='parser example')
 
 	hparams.add_argument('-logger', type=str2bool, default=logger)
-	hparams.add_argument('-logname', type=str, default=logname)
+	hparams.add_argument('-project', type=str, default=project)
+	hparams.add_argument('-experiment', type=str, default=experiment)
+
 	hparams.add_argument('-plot', type=str2bool, default=plot)
 	hparams.add_argument('-show', type=str2bool, default=show)
 	hparams.add_argument('-load_pretrained', type=str2bool, default=load_pretrained)
@@ -90,6 +94,7 @@ def HParamParser(	logger=False,
 	hparams.add_argument('-num_hidden_multiplier', type=int, default=num_hidden_multiplier)
 	hparams.add_argument('-num_layers', type=int, default=num_layers)
 
+	hparams.add_argument('-max_epochs', type=int, default=max_epochs)
 	hparams.add_argument('-batch_size', type=int, default=batch_size)
 	hparams.add_argument('-train_traj_repetition', type=int, default=train_traj_repetition)
 	hparams.add_argument('-input_length', type=int, default=input_length)
@@ -114,9 +119,11 @@ def HParamParser(	logger=False,
 			print(f"Input length for {hparams.model} was {hparams.input_length}, changed to 1")
 			hparams.input_length =1
 
-	hparams.__dict__.update({'logname': 	hparams.logname + '_' + str(hparams.model)
-					    	+ '_pct' + str(hparams.pct_dataset) + '_' + str(hparams.dataset) +
-			    			'_Ttrain' + str(hparams.output_length_train) + '_Tval' + str(hparams.output_length_val)})
+	if hparams.experiment is None:
+		experiment_str = f"{str(hparams.model)}_pct{str(hparams.pct_dataset)}_{str(hparams.dataset)}_Ttrain{str(hparams.output_length_train)}_Tval{str(hparams.output_length_val)}"
+	else:
+		experiment_str = f"{hparams.experiment}_{str(hparams.model)}_pct{str(hparams.pct_dataset)}_{str(hparams.dataset)}_Ttrain{str(hparams.output_length_train)}_Tval{str(hparams.output_length_val)}"
+	hparams.__dict__.update({'experiment': experiment_str})
 	hparams.__dict__.update({'ckptname': 	str(hparams.model)+'_'+str(hparams.dataset)+'_TrainT'+str(output_length_train)})
 
 	assert hparams.output_length >= 1

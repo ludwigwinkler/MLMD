@@ -8,4 +8,3 @@
 #$ -o IO/output.txt
 
 python MLMD_Interpolation.py -model $1 -logger True -dataset $2 -show False -num_hidden_multiplier 10 -num_layers 5
-

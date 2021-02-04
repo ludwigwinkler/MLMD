@@ -1,4 +1,4 @@
-import sys, os, inspect
+import sys, os, inspect, copy, time
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Any, Dict, Union
@@ -9,14 +9,13 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 fontsize = 20
-params = {'legend.fontsize': fontsize,
-	  # 'legend.handlelength': 2,
-	  # 'text.usetex': True}
-
-	  'xtick.labelsize': fontsize,
-	  'ytick.labelsize': fontsize,
-	  'axes.labelsize': fontsize,
+params = {	'font.size' : fontsize,
+		'legend.fontsize': fontsize,
+	  	'xtick.labelsize': fontsize,
+	  	'ytick.labelsize': fontsize,
+	  	'axes.labelsize': fontsize,
 	  }
+
 plt.rcParams.update(params)
 
 Tensor = torch.Tensor
@@ -51,6 +50,7 @@ from MLMD.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonia
 from MLMD.src.MD_HyperparameterParser import HParamParser
 from MLMD.src.MD_DataUtils import load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
 	Sequential_BiDirectional_TimeSeries_DataSet
+from MLMD.src.MD_Utils import Benchmark, Timer
 
 
 class Model(LightningModule):
@@ -332,10 +332,65 @@ class Model(LightningModule):
 		y0 = torch.cat(y0_, dim=0).cpu().detach()
 
 		assert F.mse_loss(y, data_val[0, :y.shape[0]]) == 0
-		if dm is not None: dm.plot_sequential_prediction(y, y0, t_y0, pred)
-		elif dm is None: self.trainer.datamodule.plot_sequential_prediction(y, y0, t_y0, pred)
+		if self.hparams.plot and self.hparams.show:
+			if dm is not None: dm.plot_sequential_prediction(y, y0, t_y0, pred)
+			elif dm is None: self.trainer.datamodule.plot_sequential_prediction(y, y0, t_y0, pred)
 
 		return y, y0, t_y0, pred
+
+	@torch.no_grad()
+	def measure_inference_speed(self, dm):
+
+		if dm is None:
+			data_val = self.trainer.datamodule.val_dataloader().dataset.data
+		elif dm is not None:
+			data_val = dm.val_dataloader().dataset.data
+
+		if not torch.cuda.is_available():
+			print('CPU Inference')
+
+			if 'bi_' in self.hparams.model:
+				input = torch.randn(1,2*hparams.input_length, data_val.shape[-1])
+			else:
+				input = torch.randn(1,hparams.input_length, data_val.shape[-1])
+
+			timer = Timer()
+			reps = 100
+			for i in range(reps):
+				_ = self.forward(self.hparams.output_length, input)
+			time = timer.stop()
+			print(f"{self.hparams.model}: {np.around(time)} s for {reps} single step predictions = {np.around(time/reps,5)}s/it")
+		elif torch.cuda.is_available():
+
+			device = torch.device('cuda')
+			if 'bi_' in self.hparams.model:
+				input = torch.randn(1, 2 * hparams.input_length, data_val.shape[-1], device=device)
+			else:
+				input = torch.randn(1, hparams.input_length, data_val.shape[-1], device=device)
+			self.model.to(device)
+			starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+
+			timer = Timer()
+			reps = 100
+
+			timings = np.zeros((reps, 1))
+			# GPU-WARM-UP
+			for _ in range(10):
+				_ = self.forward(self.hparams.output_length, input)
+			# MEASURE PERFORMANCE
+			print(f"GPU Inference")
+			with torch.no_grad():
+				for rep in range(reps):
+					starter.record()
+					_ = self.forward(self.hparams.output_length, input)
+					ender.record()
+					# WAIT FOR GPU SYNC
+					torch.cuda.synchronize()
+					curr_time = starter.elapsed_time(ender)
+					timings[rep] = curr_time
+			mean_time = np.sum(timings) / reps
+			std_time = np.std(timings)
+			print(f"{self.hparams.model}: {np.around(np.sum(timings),5)} ms for {reps} single step predictions = {np.around(mean_time, 5)/1000}s/it")
 
 	def on_fit_end(self):
 
@@ -343,9 +398,9 @@ class Model(LightningModule):
 		if len(self.trainer.callbacks) > 0:
 			self.log('Val/MSE', self.trainer.callbacks[0].best_score, prog_bar=False)
 
-		state_dict_path = f"{os.getcwd()}/ckpt/{hparams.ckptname}.state_dict"
-
-		if self.logger:
+		if isinstance(self.logger, WandbLogger): # saving state_dict to c
+			state_dict_path = f"{os.getcwd()}/ckpt/{hparams.ckptname}.state_dict"
+			if not os.path.exists(f"{os.getcwd()}/ckpt"): os.makedirs(f"{os.getcwd()}/ckpt")
 			torch.save(self.model.state_dict(), state_dict_path)
 			assert os.path.exists(state_dict_path) == True
 			self.logger.experiment.save(state_dict_path)
@@ -359,13 +414,17 @@ class Model(LightningModule):
 
 			if self.hparams.show: plt.show()
 
-hparams = HParamParser(logger=False, show=True, load_pretrained=True, fast_dev_run=False,
-		       model='ode2', num_layers=3, num_hidden_multiplier=3,
-		       dataset=['hmc','benzene_dft.npz', 'toluene_dft.npz','hmc', 'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'][0],
-		       input_length=3, output_length=10, batch_size=200,
-		       train_traj_repetition=20)
+hparams = HParamParser(logger=False, show=True, load_pretrained=False, fast_dev_run=False,
+		       project='mlmd',
+		       model='bi_lstm', num_layers=2, num_hidden_multiplier=5,
+		       dataset=['hmc','benzene_dft.npz', 'toluene_dft.npz','hmc', 'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'][2],
+		       input_length=1, output_length=20, batch_size=200,
+		       train_traj_repetition=20, max_epochs=2000)
 
 dm = load_dm_data(hparams)
+
+# print(f"{hparams.experiment=}")
+# exit()
 
 scaling = {'y_mu': dm.y_mu, 'y_std': dm.y_std, 'dy_mu': dm.dy_mu, 'dy_std': dm.y_std}
 hparams.__dict__.update({'in_features': dm.y_mu.shape[-1]})
@@ -373,14 +432,18 @@ hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*hparams.num_hidden_mult
 
 model = Model(**vars(hparams))
 
+# print(f"{model.summarize()}")
+# model.measure_inference_speed(dm)
+# exit()
+
 if hparams.logger is True:
 	os.system('wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5')
-	logger = WandbLogger(project='TestingStuff', entity='mlmd',name=hparams.logname)
+	logger = WandbLogger(project=hparams.project, entity='mlmd',name=hparams.experiment)
 	hparams.__dict__.update({'logger': logger})
 
 early_stop_callback = EarlyStopping(
 	monitor='Val/EpochMSE', mode='min',
-	patience=3,min_delta=0.0001,
+	patience=5,min_delta=0.000,
 	verbose=True
 )
 # model_checkpoint_callback = CustomModelCheckpoint(	filepath=f"ckpt/{hparams.ckptname}",
@@ -388,14 +451,12 @@ early_stop_callback = EarlyStopping(
 # 							save_top_k=1)
 
 trainer = Trainer.from_argparse_args(	hparams,
-				     	max_epochs=2000,
 				     	# min_steps=1000,
 				     	# max_steps=50,
 				     	progress_bar_refresh_rate=10,
 				     	callbacks=[early_stop_callback],
 				     	# limit_train_batches=10,
 				     	# limit_val_batches=10,
-					auto_scale_batch_size='power',
 					val_check_interval=1.,
 				     	# checkpoint_callback=model_checkpoint_callback,
 				     	gpus=torch.cuda.device_count(),
@@ -403,7 +464,7 @@ trainer = Trainer.from_argparse_args(	hparams,
 				     	)
 
 trainer.fit(model, datamodule=dm)
-# model.predict_sequentially()
+# model.predict_sequentially(dm)
 # plt.show()
 # model.plot_sequential_prediction(dm)
 # plt.show()

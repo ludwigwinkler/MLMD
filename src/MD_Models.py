@@ -11,8 +11,6 @@ from torch.nn import Linear, LSTM, RNN
 from torch.nn import Tanh, LeakyReLU, ReLU
 from torchdyn.models import NeuralDE
 
-from torchdiffeq import odeint_adjoint as odeint
-
 Tensor = torch.Tensor
 
 sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
@@ -34,14 +32,14 @@ class MD_Model(Module):
 
 		self.hparams = hparams
 
-	def integration(self, t, x):
+	def integration(self, t, x, direction):
 		'''
 		Abstraction for the specific integration procedure of the subclassed integrators (ODE, HNN, LSTM etc)
 		'''
 		raise NotImplementedError
 
-	def forward(self, t, x):
-		return self.integration(t, x)
+	def forward(self, t, x, direction=1):
+		return self.integration(t, x, direction)
 
 	def criterion(self, _pred, _target, mode=None):
 
@@ -57,7 +55,6 @@ class MD_Model(Module):
 			return F.mse_loss(_pred, _target)
 		else:
 			raise Exception(f'Wrong Criterion chosen: {self.hparams.criterion}')
-
 
 class MD_ODE(MD_Model):
 
@@ -228,10 +225,11 @@ class MD_LSTM(MD_Model):
 			self.dy_mu = scaling['dy_mu']
 			self.dy_std = scaling['dy_std']
 
-	def integration(self, t, x):
+	def integration(self, t, x, direction=1):
 		'''
 		:param t:
 		:param x: [x(0), x(1), x(2)]
+		:direction : sign of integration direction, whether to add dx/dt in forward integration or subtract in backward integration
 		:return:
 		'''
 		if x.dim() == 2: x = x.unsqueeze(1)
@@ -243,7 +241,7 @@ class MD_LSTM(MD_Model):
 		for step in range(t - 1):  # because we add the first entry y0 at the beginning
 			pred_t, (h, c) = self.lstm(out[:, -1:], (h, c))
 			dx_t = self.out_emb(pred_t)
-			out = torch.cat([out, out[:, -1:, :] + dx_t], dim=1)
+			out = torch.cat([out, out[:, -1:, :] + direction*dx_t], dim=1)
 		return out
 
 class MD_RNN(MD_Model):
@@ -262,15 +260,16 @@ class MD_RNN(MD_Model):
 			self.dy_mu = scaling['dy_mu']
 			self.dy_std = scaling['dy_std']
 
-	def integration(self, t, x):
+	def integration(self, t, x, direction=1):
 		''''
 		t=3: predition timesteps
+		direction : sign of integration direction, whether to add dx/dt in forward integration or subtract in backward integration
 		Input: [y0 y1 y2 y3]
 		Input Prediction: [y0 y1 y2 y3] + [dy0 dy1 dy2 dy3] -> [y1' y2' y3' y4']
 		Output Prediction [y4'] -> AR(t=3-1) -> [y5' y6'] ([y4'] -> [y5'] was already a prediction step)
 		Prediction: [y0 y1' y2' y3' y4' | y5' y6' y7']
-
 		'''
+
 		if x.dim() == 2: x = x.unsqueeze(1)
 		assert x.dim() == 3
 
@@ -280,12 +279,11 @@ class MD_RNN(MD_Model):
 		for step in range(t - 1):  # because we add the first entry y0 at the beginning
 			pred_t, h = self.rnn(out[:, -1:], h)
 			dx_t = self.out_emb(pred_t)
-			out = torch.cat([out, out[:, -1:, :] + dx_t], dim=1)
+			out = torch.cat([out, out[:, -1:, :] + direction*dx_t], dim=1)
 
 		'''
 		out = [y1' y2' y3' y4' | y5' y6' y7'] -> [y0 y1' y2' y3' y4' | y5' y6' y7']
 		'''
-
 		return out
 
 # Bidirectional Models
@@ -331,7 +329,7 @@ class MD_BiModel(Module):
 
 		return x_for, x_back
 
-	def integration(self, t, x):
+	def integration(self, t, x, direction):
 		raise NotImplementedError
 
 	def forward_solution(self,t,x):
@@ -339,18 +337,24 @@ class MD_BiModel(Module):
 		t: number of integration steps
 		x: initial condition
 		'''
-		return self.integration(t=t, x=x)
+		return self.integration(t=t, x=x, direction=1)
 
 	def backward_solution(self, t, x):
 		'''
 		t: number of integration steps
-		x: initial condition
+		x: initial condition, x= [pos, vel]
 		'''
-		velocity_flip = torch.ones(x.shape[-1], device=x.device)  # [ 1 1 1 1 ]
-		velocity_flip[velocity_flip.shape[-1] // 2:] = -1  # [ 1 1 -1 -1 ]
-		x_back = x * velocity_flip
-		pred_back = self.integration(t=t, x=x_back).flip([1])
-		pred_back = pred_back * velocity_flip
+
+		'''
+		x = [pos, vel]
+		f_\theta(x_t, t) gives us the change in [dpos, dvel]
+		
+		'''
+		# velocity_flip = torch.ones(x.shape[-1], device=x.device)  # [ 1 1 1 1 ]
+		# velocity_flip[velocity_flip.shape[-1] // 2:] = -1  # [ 1 1 -1 -1 ]
+		# x_back = x * velocity_flip
+		pred_back = self.integration(t=t, x=x, direction=-1).flip([1])
+		# pred_back = pred_back * velocity_flip
 
 		return pred_back
 
@@ -446,13 +450,13 @@ class MD_BiDirectional_LSTM(MD_BiModel):
 			self.dy_mu = scaling['dy_mu']
 			self.dy_std = scaling['dy_std']
 
-	def integration(self, t, x):
+	def integration(self, t, x, direction=1):
 		'''
 		:param t:
 		:param x: [x(0), x(1), x(2)]
 		:return:
 		'''
-		return self.md_lstm.forward(t, x)
+		return self.md_lstm.forward(t, x, direction)
 
 class MD_BiDirectional_Hamiltonian(MD_BiModel):
 
