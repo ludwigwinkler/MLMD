@@ -30,7 +30,3 @@ import copy
 cwd = os.path.abspath(os.getcwd())
 os.chdir(cwd)
 
-params = argparse.ArgumentParser()
-params.add_argument('-xyz', type=str, default='test_xyz')
-
-params = params.parse_args()
