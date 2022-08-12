@@ -16,6 +16,7 @@ experiments/ckpt/*.ckpt
 /resources/MDCode/*.npz
 /resources/MDCode/*.dat
 /resources/MDCode/*.xyz
+experiments/MDPredictions/*
 
 # Distribution / packaging
 .Python
