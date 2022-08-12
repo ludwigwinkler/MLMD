@@ -1,57 +1,84 @@
+import math
 import sys, os, inspect, copy, time
+import warnings
+from numbers import Number
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 from typing import Any, Dict, Union
 from tqdm import tqdm
 
 import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-fontsize = 20
-params = {	'font.size' : fontsize,
-		'legend.fontsize': fontsize,
-	  	'xtick.labelsize': fontsize,
-	  	'ytick.labelsize': fontsize,
-	  	'axes.labelsize': fontsize,
-	  }
+from torchtyping import TensorType, patch_typeguard
+from typeguard import typechecked
 
+patch_typeguard()
+
+fontsize = 60
+params = {
+ 'font.size'       : fontsize,
+ 'legend.fontsize' : fontsize * 0.75,
+ 'xtick.labelsize' : fontsize,
+ 'ytick.labelsize' : fontsize,
+ 'axes.labelsize'  : fontsize,
+ 'figure.figsize'  : (12, 12),
+ 'figure.facecolor': 'white',
+ 'lines.linewidth' : 3,
+ 'text.usetex'     : True,
+ 'mathtext.fontset': 'stix',
+ 'font.family'     : 'STIXGeneral'}
 plt.rcParams.update(params)
 
 Tensor = torch.Tensor
 FloatTensor = torch.FloatTensor
+
+device = torch.device('cpu') if not torch.cuda.is_available() else torch.device('cuda:0')
 
 # This is a test
 
 torch.set_printoptions(precision=5, sci_mode=False)
 np.set_printoptions(precision=5, suppress=True)
 
-sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments -> MLMD
-sys.path.append("/".join(os.getcwd().split("/")[:-2])) # experiments -> MLMD -> PHD
-# sys.path.append(os.getcwd())
+sys.path.append("/".join(os.getcwd().split("/")[:-3])) # experiments -> MLMD -> PHD
+sys.path.append("/".join(os.getcwd().split("/")[:-2])) # experiments -> MLMD
+sys.path.append("/".join(os.getcwd().split("/")[:-1])) # experiments
+sys.path.append(os.getcwd())
+
+file_path = Path(__file__)
+cwd = file_path.parent
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# cwd = os.path.abspath(os.getcwd())
-# os.chdir(cwd)
-
+import pytorch_lightning
 from pytorch_lightning import LightningModule
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.utilities.cloud_io import load as pl_load
 import wandb
 from pytorch_lightning.loggers import WandbLogger
 
-seed_everything(123)
+# seed_everything(123)
 
+import MLMD
+from MLMD.experiments.ExportToXYZ import export_to_xyz
 from MLMD.src.MD_AtomGeometry import Atom, compute_innermolecular_distances
-from MLMD.src.MD_PL_CallBacks import CustomModelCheckpoint
-from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM, MD_ODE_SecOrder
+from MLMD.src.MD_PL_CallBacks import OverwritingModelCheckpoint
+from MLMD.src.MD_Models import MD_ODE, MD_Hamiltonian, MD_RNN, MD_LSTM, MD_ODE_SecOrder, MD_VAR
 from MLMD.src.MD_Models import MD_BiDirectional_RNN, MD_BiDirectional_Hamiltonian, MD_BiDirectional_ODE, MD_BiDirectional_LSTM
-from MLMD.src.MD_HyperparameterParser import HParamParser
+from MLMD.src.MD_ModelUtils import auto_scale_batch_size
+from MLMD.src.MD_HyperparameterParser import Interpolation_HParamParser
 from MLMD.src.MD_DataUtils import load_dm_data, QuantumMachine_DFT, Sequential_TimeSeries_DataSet, \
 	Sequential_BiDirectional_TimeSeries_DataSet
 from MLMD.src.MD_Utils import Benchmark, Timer
-
 
 class Model(LightningModule):
 
@@ -76,55 +103,81 @@ class Model(LightningModule):
 			# self.model = MD_Hamiltonian(hparams=self.hparams)
 			self.model = MD_Hamiltonian(hparams=self.hparams)
 		elif self.hparams.model == 'ode':
-			self.model = MD_ODE(hparams=self.hparams, scaling=scaling)
-		elif self.hparams.model == 'ode2':
-			self.model = MD_ODE_SecOrder(hparams=self.hparams, scaling=scaling)
+			self.model = MD_ODE(hparams=self.hparams)
+		elif self.hparams.model == 'var':
+			self.model = MD_VAR(hparams=self.hparams)
 		else:
 			exit(f'Wrong model: {self.hparams.model}')
 
-	def load_model_and_optim_state_dicts(self):
+	def load_weights(self):
 		'''
 		Custom checkpoint loading function that only loads the weights and, if chosen, the optim state
 		PyTorch Lightnings load_from_checkpoint also changes the hyperparameters unfortunately, which we don't want
 		'''
 
-		if self.hparams.load_pretrained:
-			print(f"Looking for checkpoint ... ", end='')
-			state_dict_path = f"{os.getcwd()}/ckpt/{hparams.ckptname}.state_dict"
-			if os.path.exists(state_dict_path):
-				print(f"Found at {state_dict_path} ... ", end='')
-				state_dict = torch.load(state_dict_path, map_location=device)
-				try:
-					self.model.load_state_dict(state_dict, strict=True);
-					print(f"and loaded!")
-				except:
-					print(f" but couldn't load.")
+		ckpt_path = Path(__file__).parent / f'ckpt/{self.hparams.ckptname}.ckpt'
+
+		ckpt_paths = [	str.replace(str(ckpt_path), f'_T{self.hparams.output_length_train}', '_T5'),
+				str.replace(str(ckpt_path), f'_T{self.hparams.output_length_train}', '_T10'),
+				str.replace(str(ckpt_path), f'_T{self.hparams.output_length_train}', '_T20')]
+
+		# for ckpt_path_ in ckpt_paths[:1]:
+		for ckpt_path_ in [ckpt_path]:
+			print()
+			print(f'Looking for pretrained model at')
+			print(f'{ckpt_path_}')
+			if os.path.exists(ckpt_path_):
+				print(" found", end='')
+
+				old_param = copy.deepcopy(list(self.parameters())[5])
+
+				self.load_state_dict(pl_load(ckpt_path_, map_location=device)['state_dict'], strict=True)
+				assert (old_param - list(self.parameters())[5]).abs().sum()>0.0
+				print(' and loaded!')
+
+			else:
+				print(" but nothing found. :(")
+			print()
 
 	def on_fit_start(self):
+		if self.hparams.load_weights:
+			self.load_weights()
 
-		if self.hparams.load_pretrained:
-			self.load_model_and_optim_state_dicts()
-
-	def forward(self, t, x):
+	@torch.no_grad()
+	@typechecked
+	def forward(self, t: TensorType[()], x: TensorType['BS', 'T', 'F']) -> TensorType['BS', -1, 'F']:
 		'''
 		x.shape = [BS, InputLength, F]
 		out.shape = [BS, InputLength+OutputLength, F]
 		'''
-		out = self.model(t, x)
-		return out
+
+		return self.model(t, x)
 
 	def training_step(self, batch, batch_idx):
 
 		batch_y0, batch_t, batch_y = batch
-		batch_pred = self.forward(batch_t[0], batch_y0)
+		batch_pred = self.model(batch_t[0], batch_y0)
 
-		batch_loss = self.model.criterion(batch_pred, batch_y, mode='t')
+		batch_loss = self.model.criterion(batch_pred, batch_y)
 		loss = batch_loss
 		batch_loss = batch_loss.detach()
-		
-		self.log_dict({'Train/t': batch_t[0], 'Train/MSE': batch_loss}, prog_bar=True)
 
-		return {'loss': loss, 'Train/MSE': batch_loss}
+		with torch.no_grad():
+			rescale = self.trainer.datamodule.unnormalize
+			angle, dist = Atom(rescale(batch_y), self.hparams).compute_MD_geometry()
+			pred_angle, pred_dist = Atom(rescale(batch_pred), self.hparams).compute_MD_geometry()
+
+			if self.hparams.criterion == 'MSE': criterion = F.mse_loss
+			elif self.hparams.criterion == 'MAE': criterion = F.l1_loss
+
+			train_dist_loss = criterion(dist, pred_dist)
+			train_angle_loss = torch.ones_like(train_dist_loss).fill_(-1.) #criterion(angle, pred_angle)
+
+		self.log_dict({'Train/'+self.hparams.criterion: batch_loss}, prog_bar=False)
+		self.log_dict({'Train/t': batch_t[0]}, prog_bar=True)
+		self.log_dict({'Train/AngleLoss': train_angle_loss, 'Train/DistLoss': train_dist_loss}, prog_bar=False)
+
+		return {'loss': loss, 'Train/' + self.hparams.criterion: batch_loss, 'Train/AngleLoss': train_angle_loss, 'Train/DistLoss': train_dist_loss}
 
 	def on_train_batch_end(self, outputs: Any, batch: Any, batch_idx: int, dataloader_idx: int) -> None:
 
@@ -132,115 +185,125 @@ class Model(LightningModule):
 			self.trainer.train_dataloader.dataset.sample_output_length()
 
 	def training_epoch_end(self, outputs):
-		val_loss = torch.stack([x['Train/MSE'] for x in outputs]).mean()
-		self.log('Train/EpochMSE', val_loss, prog_bar=True)
+		train_loss = torch.stack([x['Train/'+self.hparams.criterion] for x in outputs]).mean()
+		train_angle_loss = torch.stack([x['Train/AngleLoss'] for x in outputs]).mean()
+		train_dist_loss = torch.stack([x['Train/DistLoss'] for x in outputs]).mean()
+		self.log_dict({'Train/Loss': train_loss}, prog_bar=True)
+		self.log_dict({'Train/EpochAngleLoss': train_angle_loss, 'Train/EpochDistLoss': train_dist_loss}, prog_bar=False)
 
 	def validation_step(self, batch, batch_idx):
 		batch_y0, batch_t, batch_y = batch
 
-		batch_pred = self.forward(batch_t[0], batch_y0)
-		batch_loss = self.model.criterion(batch_pred, batch_y, mode='t')
+		batch_pred = self.model(batch_t[0], batch_y0)
+		batch_loss = self.model.criterion(batch_pred, batch_y)
 
-		return {'Val/MSE': batch_loss, 'Val/t': batch_t[0]}
+		with torch.no_grad():
+			# rescale = self.trainer.datamodule.unnormalize
+			rescale = lambda x: x
+			pos, vel = torch.chunk(batch_y, chunks=2, dim=-1)
+			pred_pos, pred_vel = torch.chunk(batch_pred, chunks=2, dim=-1)
+			angle, dist = Atom(rescale(batch_y), self.hparams).compute_MD_geometry()
+			pred_angle, pred_dist = Atom(rescale(batch_pred), self.hparams).compute_MD_geometry()
+
+			if self.hparams.criterion == 'MSE': criterion = F.mse_loss
+			elif self.hparams.criterion == 'MAE': criterion = lambda pred,target: (pred -target).abs().mean()
+
+			val_dist_loss = criterion(dist, pred_dist)
+			val_velocity_loss = criterion(vel, pred_vel)
+			val_angle_loss = torch.ones_like(val_dist_loss).fill_(-1.)  # criterion(angle, pred_angle)
+
+			for_loss = self.model.criterion(self.model.pred_for, batch_y, validate_args=False)
+			back_loss = self.model.criterion(self.model.pred_back, batch_y, validate_args=False)
+
+		return {'Val/'+ self.hparams.criterion: batch_loss,
+			'Val/For' + self.hparams.criterion: for_loss, 'Val/Back' + self.hparams.criterion: back_loss,
+			'Val/AngleLoss': val_angle_loss, 'Val/DistLoss': val_dist_loss, 'Val/VelLoss': val_velocity_loss,
+			'Val/t': batch_t[0]}
 
 	def validation_epoch_end(self, outputs):
-		val_loss = torch.stack([x['Val/MSE'] for x in outputs]).mean()
-		self.log_dict({'Val/EpochMSE':val_loss, 'Val/t': self.hparams.output_length_val}, prog_bar=True)
+		val_loss 		= torch.stack([x['Val/'		+ self.hparams.criterion] 	for x in outputs]).mean()
+		val_for_loss 	= torch.stack([x['Val/For'	+ self.hparams.criterion] 	for x in outputs]).mean()
+		val_back_loss 	= torch.stack([x['Val/Back'	+ self.hparams.criterion] 	for x in outputs]).mean()
+		val_angle_loss 	= torch.stack([x['Val/AngleLoss'] 				for x in outputs]).mean()
+		val_dist_loss 	= torch.stack([x['Val/DistLoss'] 				for x in outputs]).mean()
+		val_vel_loss 	= torch.stack([x['Val/VelLoss'] 				for x in outputs]).mean()
+
+		self.log_dict({'Val/Epoch'+self.hparams.criterion:val_loss, 'Val/t': self.hparams.output_length_val}, prog_bar=True)
+		self.log_dict({'Val/EpochFor'+self.hparams.criterion: val_for_loss, 'Val/EpochBack' + self.hparams.criterion: val_back_loss}, prog_bar=True)
+		self.log_dict({'Val/EpochAngleLoss': val_angle_loss, 'Val/EpochDistLoss': val_dist_loss, 'Val/EpochVelLoss': val_vel_loss}, prog_bar=False)
 
 	def configure_optimizers(self):
-		return torch.optim.Adam(self.parameters())
+		if self.hparams.lr==0: warnings.warn(f"Learning rate is {self.hparams.lr}")
+		if self.hparams.optim=='adam':
+			optim = torch.optim.Adam(self.model.parameters(), lr=1e-3 if self.hparams.lr <=0 else self.hparams.lr)
+			schedulers = {
+					'scheduler': ReduceLROnPlateau(optim, mode='min', factor=0.5, threshold=1e-3, patience=1, min_lr=1e-5, verbose=True),
+					'monitor': 'Val/Epoch'+self.hparams.criterion,
+					'interval': 'epoch',
+					'reduce_on_plateau': True,
+					'frequency': 1,
+					'strict': True,
+					}
+		elif self.hparams.optim == 'sgd':
+			optim = torch.optim.SGD(self.model.parameters(), lr=1e-2 if self.hparams.lr <= 0 else self.hparams.lr, momentum=0.8, dampening=0.6)
+			schedulers = {
+				'scheduler': ReduceLROnPlateau(optim, mode='min', factor=0.1, threshold=1e-3, patience=2, min_lr=1e-5, verbose=True),
+				'monitor': 'Val/Epoch' + self.hparams.criterion,
+				'interval': 'epoch',
+				'reduce_on_plateau': True,
+				'frequency': 1,
+				'strict': True,
+			}
 
-	def plot_velocity_histogram(self):
-		if self.hparams.dataset in ['benzene_dft.npz', 'ethanol_dft.npz', 'malonaldehyde_dft.npz']:
-			batch = next(self.trainer.datamodule.val_dataloader().__iter__())
-			batch_y0, batch_t, batch_y = batch
-			pos, vel = batch_y.chunk(chunks=2, dim=-1)
-			with torch.no_grad(): pred = self.forward(batch_t[0], batch_y0)
-			pred_pos, pred_vel = pred.chunk(chunks=2, dim=-1)
+		return [optim], [schedulers]
 
-			# print(f"{vel.shape=}")
-			bs, t, dim = vel.shape
-
-			vel = vel.reshape(bs, t, -1, 3)
-			pred_vel = pred_vel.reshape(bs, t, -1, 3)
-			num_atoms = pred_vel.shape[2]
-
-			MB_dist = lambda a, x: (2 / np.pi) ** 0.5 * x ** 2 * np.exp(-x ** 2 / (2 * a ** 2)) / a ** 3
-
-			pred_vel += torch.randn_like(pred_vel) * 0.001
-			magn_vel = vel.abs().sum(dim=-1)[:].flatten()
-			magn_pred_vel = pred_vel.abs().sum(dim=-1)[:, 0].flatten()
-
-			hist_params = {'bins': 100, 'alpha': 0.25, 'density': True}
-			x = np.linspace(0, 10, 100)
-			plt.plot(x, MB_dist(1.5, x), lw=5, color='green', ls='--', label=r'$p_{MB}(x|a=1.5)$')
-			plt.hist(magn_vel, **hist_params, color='red', label=r'$||\dot{q}(t)||$')
-			plt.hist(magn_pred_vel, **hist_params, color='blue', label=r'$||\dot{\tilde{q}}(t)||$')
-			plt.xlabel(r'Speed')
-			plt.ylabel(r'Probability Density')
-			plt.legend()
-			plt.show()
-
-	@torch.no_grad()
 	def plot_interatomic_distances_histogram(self, dm):
+		
+		'''Predict trajectories'''
+		y, pred = self.predict_batches(dm)
 
-		self.load_model_and_optim_state_dicts()
-
-		dataloader = dm.val_dataloader()
-
-		y_ = []
-		y0_ = []
-		pred_ = []
-		for i, (y0, t, y) in enumerate(dataloader):
-			y0 = y0.to(device)
-			t = t.to(device)
-			self.model.to(device)
-
-			batch_pred = self.forward(t[0], y0)
-
-			if 'bi' in self.hparams.model:
-				pred_.append(batch_pred[:, :-self.hparams.input_length])
-				y_.append(y[:, :-self.hparams.input_length])
-			else:
-				pred_.append(batch_pred)
-				y_.append(y)
-
-			y0_.append(y0[:, :(self.hparams.input_length)])
-
-			if i==10: break
-
-		'''Batched predictions [batch_size, timestpes, features]'''
-		pred 	= torch.cat(pred_, dim=0).cpu().detach()
-		y 	= torch.cat(y_, dim=0).cpu().detach()
-		y0 	= torch.cat(y0_, dim=0).cpu().detach()
-
-		assert F.mse_loss(pred[:,0,:], y[:,0,:])==0
-
+		'''Compute angles and velocities'''
 		pred_dist = compute_innermolecular_distances(pred)
 		true_dist = compute_innermolecular_distances(y)
 
+		'''Flatten for dists'''
 		pred_dist = pred_dist.flatten()[torch.randperm(pred_dist.numel())][:100000]
 		true_dist = true_dist.flatten()[torch.randperm(true_dist.numel())][:100000]
 
 		pred_dist = pred_dist[pred_dist!=0.0]
 		true_dist = true_dist[true_dist!=0.0]
 
-		assert pred_dist.dim()==true_dist.dim()==1
+		dm.plot_interatomic_distances_histogram(true_dist, pred_dist,
+		                                        str=self.hparams.dataset_nicestr+f": T={self.hparams.output_length*0.2}fs")
 
-		fig = plt.figure()
+		if self.hparams.show: plt.show()
 
-		plt.hist(pred_dist.numpy(), density=True, bins=100, color='red', alpha=0.5, label='Target')
-		plt.hist(true_dist.numpy(), density=True, bins=100, color='blue', alpha=0.5, label='Predicted')
-		plt.xlabel('$d[\AA]$')
-		plt.ylabel('$p(d)$')
-		plt.legend()
-		plt.savefig(fname=f"{self.hparams.dataset[:-4]}_{self.hparams.model}.png", format='png')
+	def plot_speed_histogram(self, dm):
+
+		y, pred = self.predict_batches(dm)
+
+		pred_pos, pred_vel = pred.chunk(chunks=2, dim=-1)
+		pos, vel = y.chunk(chunks=2, dim=-1)
+
+		BS, T, F = vel.shape
+		vel = vel.reshape(BS, T, -1, 3)
+		pred_vel = pred_vel.reshape(BS, T, -1, 3)
+
+		speed 		= vel.abs().sum(dim=-1)[:].flatten()
+		pred_speed 	= pred_vel.abs().sum(dim=-1)[:].flatten()
+
+		pred_speed 	= pred_speed.flatten()[torch.randperm(pred_speed.numel())][:100000]
+		speed 		= speed.flatten()[torch.randperm(speed.numel())][:100000]
+
+		dm.plot_speed_histogram(speed, pred_speed, str=self.hparams.dataset_nicestr)
+
 		if self.hparams.show: plt.show()
 
 	@torch.no_grad()
 	def predict_batches(self, dm=None):
 		'''
 		dm: external datamodule
+		output: [BS, TS, Features]
 		'''
 
 		if dm is None:
@@ -260,8 +323,8 @@ class Model(LightningModule):
 				pred_.append(batch_pred[:, self.hparams.input_length:-self.hparams.input_length])
 				y_.append(y[:, self.hparams.input_length:-self.hparams.input_length])
 			else:
-				pred_.append(batch_pred[:,self.hparams.input_length])
-				y_.append(y[:, self.hparams.input_length])
+				pred_.append(batch_pred[:,:self.hparams.input_length])
+				y_.append(y[:,:self.hparams.input_length])
 
 			y0_.append(y0)
 
@@ -272,10 +335,13 @@ class Model(LightningModule):
 		y = torch.cat(y_, dim=0).cpu().detach()
 		y0 = torch.cat(y0_, dim=0).cpu().detach()
 
-	@torch.no_grad()
-	def predict_sequentially(self, dm=None):
+		return y, pred
 
-		# print("Plotting ...")
+	@torch.no_grad()
+	def predict_sequentially(self, dm=None, num_sequential_samples=None):
+
+		self.eval()
+
 		if dm is None:
 			data_val = self.trainer.datamodule.val_dataloader().dataset.data
 		elif dm is not None:
@@ -283,7 +349,9 @@ class Model(LightningModule):
 			# data_val = dm.train_dataloader().dataset.data
 			data_val = dm.data_norm
 		assert data_val.dim() == 3
-		num_sequential_samples = np.min([500, data_val.shape[1]])
+		assert num_sequential_samples is None or type(num_sequential_samples)==int
+
+		num_sequential_samples = np.min([100000 if num_sequential_samples is None else num_sequential_samples, int(data_val.shape[1]*0.9)])
 
 		if 'bi' in self.hparams.model:
 			'''
@@ -294,9 +362,9 @@ class Model(LightningModule):
 									       output_length=self.hparams.output_length_val)
 		else:
 			data_set = Sequential_TimeSeries_DataSet(data_val[0], input_length=self.hparams.input_length,
-								 output_length=self.hparams.output_length_val)
+								 output_length=self.hparams.output_length_val,)
 
-		dataloader = DataLoader(data_set, batch_size=100, sampler=torch.utils.data.SequentialSampler(data_set.data))
+		dataloader = DataLoader(data_set, batch_size=100, sampler=torch.utils.data.SequentialSampler(data_set.data), drop_last=False)
 
 		segments = num_sequential_samples // (self.hparams.input_length + self.hparams.output_length_val)
 		input_length_ = np.tile(np.arange(0, self.hparams.input_length), segments)
@@ -308,35 +376,42 @@ class Model(LightningModule):
 		y0_ = []
 		pred_ = []
 		total_length = 0
-		for y0, t, y in tqdm(dataloader, desc='Predicting Sequentially'):
+		pbar = tqdm(dataloader, total=num_sequential_samples)
+		for y0, t, y in pbar:
 
 			y0 = y0.to(device)
 			t = t.to(device)
 			self.model.to(device)
 
-			batch_pred = self.forward(t[0], y0)
+			batch_pred = self.forward(t[0], y0) # [ BS, T, F]
 
 			if 'bi' in self.hparams.model:
-				pred_.append(batch_pred[:, :-self.hparams.input_length].flatten(0, 1))
-				y_.append(y[:, :-self.hparams.input_length].flatten(0, 1))
+				pred_ += [*batch_pred[:, :-self.hparams.input_length]]
+				y_ += [*y[:, :-self.hparams.input_length]]
 			else:
-				pred_.append(batch_pred.flatten(0, 1))
-				y_.append(y.flatten(0, 1))
+				pred_ += [*batch_pred]
+				y_ += [*y]
 			y0_.append(y0[:, :(self.hparams.input_length)].flatten(0, 1)) # add [BS*(input_length+output_length), Features]
-			total_length += pred_[-1].shape[0]
-			if total_length>num_sequential_samples: break
+
+			total_length += math.prod(batch_pred.shape[:2])
+			pbar.set_description(desc=f"Samples: {num_sequential_samples} | Progress: {total_length/num_sequential_samples:.2f}")
+			if total_length > num_sequential_samples: break
 
 
-		pred = torch.cat(pred_, dim=0).cpu().detach()
-		y = torch.cat(y_, dim=0).cpu().detach()
+		pred = [pred__.cpu().detach() for pred__ in pred_]
+		y = [y__.cpu().detach() for y__ in y_]
+
+		# pred = torch.cat(pred_, dim=0).cpu().detach()
+		# y = torch.cat(y_, dim=0).cpu().detach()
 		y0 = torch.cat(y0_, dim=0).cpu().detach()
 
-		assert F.mse_loss(y, data_val[0, :y.shape[0]]) == 0
-		if self.hparams.plot and self.hparams.show:
-			if dm is not None: dm.plot_sequential_prediction(y, y0, t_y0, pred)
-			elif dm is None: self.trainer.datamodule.plot_sequential_prediction(y, y0, t_y0, pred)
+		assert F.mse_loss(y[0], data_val[0, :y[0].shape[0]]) == 0
+		# if self.hparams.plot and self.hparams.show:
+		# 	if dm is not None: dm.plot_sequential_prediction(y=y, y0=y0, t0=t_y0, pred=pred)
+		# 	elif dm is None: self.trainer.datamodule.plot_sequential_prediction(y=y, y0=y0, t0=t_y0, pred=pred)
 
-		return y, y0, t_y0, pred
+		self.train()
+		return y, pred, y0, t_y0
 
 	@torch.no_grad()
 	def measure_inference_speed(self, dm):
@@ -394,77 +469,311 @@ class Model(LightningModule):
 
 	def on_fit_end(self):
 
-		# checks that trainer has early_stopping_callback
-		if len(self.trainer.callbacks) > 0:
-			self.log('Val/MSE', self.trainer.callbacks[0].best_score, prog_bar=False)
-
-		if isinstance(self.logger, WandbLogger): # saving state_dict to c
-			state_dict_path = f"{os.getcwd()}/ckpt/{hparams.ckptname}.state_dict"
-			if not os.path.exists(f"{os.getcwd()}/ckpt"): os.makedirs(f"{os.getcwd()}/ckpt")
-			torch.save(self.model.state_dict(), state_dict_path)
-			assert os.path.exists(state_dict_path) == True
-			self.logger.experiment.save(state_dict_path)
-
-		if self.hparams.plot and self.current_epoch>0:
-			prediction_data = self.predict_sequentially()
-			fig = self.trainer.datamodule.plot_sequential_prediction(*prediction_data)
+		if self.hparams.plot and self.current_epoch>=0:
+			fig = self.trainer.datamodule.plot_sequential_prediction(*self.predict_sequentially())
 			if isinstance(self.logger, WandbLogger):
-				print('Saving image ...')
+				print('Saving image to WandB ...')
 				self.logger.experiment.log({'Pred':wandb.Image(fig, caption="Val Prediction")})
 
-			if self.hparams.show: plt.show()
+			if self.hparams.show:
+				print('Saving image to disk ...')
+				fig.savefig(f"{cwd.parent}/visualization/plots/{hparams.ckptname}.png")
+				plt.show()
 
-hparams = HParamParser(logger=False, show=True, load_pretrained=False, fast_dev_run=False,
-		       project='mlmd',
-		       model='bi_lstm', num_layers=2, num_hidden_multiplier=5,
-		       dataset=['hmc','benzene_dft.npz', 'toluene_dft.npz','hmc', 'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'][2],
-		       input_length=1, output_length=20, batch_size=200,
-		       train_traj_repetition=20, max_epochs=2000)
+# TODO:: vibrational spectra : label size
 
-dm = load_dm_data(hparams)
+plotting_mode = ['vibrationalspectra', 'interatomicdistances', 'aldehydeplot', 'training'][0]
 
-# print(f"{hparams.experiment=}")
+if plotting_mode=='training':
+
+	hparams = Interpolation_HParamParser(logger=0, plot=0, show=0, load_weights=0, save_weights=0, fast_dev_run=0,
+										 project='vibrationalspectra',
+										 model='bi_lstm', num_layers=5, num_hidden_multiplier=10, criterion='MAE',
+										 interpolation=True, interpolation_mode='adiabatic', integration_mode='diffeq',
+										 diffeq_output_scaling=1,
+										 dataset=['malonaldehyde_dft.npz', 'benzene_dft.npz', 'ethanol_dft.npz',
+												  'toluene_dft.npz', 'naphthalene_dft.npz', 'salicylic_dft.npz',
+												  'paracetamol_dft.npz', 'aspirin_dft.npz',
+												  'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'
+												  ][0],
+										 input_length=1, output_length=20, batch_size=49, auto_scale_batch_size=False,
+										 optim='adam', lr=1e-3, train_traj_repetition=1, max_epochs=2,
+										 limit_train_batches=25, limit_val_batches=25)
+
+	dm = load_dm_data(hparams)
+
+	if hparams.auto_scale_batch_size:
+		new_batch_size = auto_scale_batch_size(hparams, Model, dm)
+		hparams.__dict__.update({'batch_size': new_batch_size})
+
+	model = Model(**vars(hparams))
+	model.model.set_diffeq_output_scaling_statistics(dm.dy_mu, dm.dy_std)
+
+	if hparams.logger:
+		os.system('wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5')
+		logger = WandbLogger(project=hparams.project, entity='mlmd', name=hparams.experiment)
+		hparams.__dict__.update({'logger': logger})
+
+	early_stop_callback = EarlyStopping(monitor='Val/Epoch' + hparams.criterion, mode='min',
+										patience=3, min_delta=0.0005,
+										verbose=True)
+
+	checkpoint_callback = OverwritingModelCheckpoint(monitor='Val/Epoch' + hparams.criterion,
+													 dirpath=f'{cwd}/ckpt/',
+													 filename=hparams.ckptname,
+													 save_weights_only=True,
+													 mode='min')
+
+	trainer = Trainer.from_argparse_args(hparams,
+										 # min_steps=1000,
+										 # max_steps=50,
+										 progress_bar_refresh_rate=5,
+										 callbacks=[early_stop_callback,
+													checkpoint_callback] if hparams.save_weights else [
+											 early_stop_callback],
+										 val_check_interval=1.,
+										 gpus=1 if torch.cuda.is_available() else None,
+										 distributed_backend=None
+										 )
+
+	trainer.fit(model=model, dm=dm)
+
+if plotting_mode=='vibrationalspectra':
+	
+	fontsize = 60
+	params = {
+	 'font.size'       : fontsize,
+	 'legend.fontsize' : fontsize * 0.75,
+	 'xtick.labelsize' : fontsize,
+	 'ytick.labelsize' : fontsize,
+	 'axes.labelsize'  : fontsize,
+	 'figure.figsize'  : (12, 12),
+	 'figure.facecolor': 'white',
+	 'lines.linewidth' : 3,
+	 'text.usetex'     : True,
+	 'mathtext.fontset': 'stix',
+	 'font.family'     : 'STIXGeneral'}
+	plt.rcParams.update(params)
+
+	fig, axs = plt.subplots(ncols=1, nrows=6, figsize=(20, 54), gridspec_kw={'height_ratios': [2, 1, 2, 1, 2, 1]})
+	max_diff = 0
+
+	for T in [5, 20, 80]:
+
+		i = {5:0, 20:2, 80:4}[T]
+		print()
+		print(f"{T=}")
+		print()
+
+		trained_spectra_dicts = []
+		untrained_spectra_dicts = []
+
+		hparams = Interpolation_HParamParser(	logger=0, plot=0, show=0, load_weights=0, save_weights=0, fast_dev_run=0,
+							project='vibrationalspectra',
+							model='bi_lstm', num_layers=5, num_hidden_multiplier=10, criterion='MAE',
+							interpolation=True, interpolation_mode='adiabatic', integration_mode='diffeq', diffeq_output_scaling=1,
+							dataset=['malonaldehyde_dft.npz', 'benzene_dft.npz', 'ethanol_dft.npz', 'toluene_dft.npz', 'naphthalene_dft.npz', 'salicylic_dft.npz', 'paracetamol_dft.npz', 'aspirin_dft.npz',
+								 'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'
+								 ][0],
+							input_length=1, output_length=T, batch_size=49, auto_scale_batch_size=False,
+							optim='adam', lr=1e-3, train_traj_repetition=1, max_epochs=2,
+							limit_train_batches=25, limit_val_batches=25)
+
+		dm = load_dm_data(hparams)
+
+		model = Model(**vars(hparams))
+		model.model.set_diffeq_output_scaling_statistics(dm.dy_mu, dm.dy_std)
+
+		num_sequential_samples = 100000
+		for TRAINED in [False, True]:
+			model = Model(**vars(hparams))
+			model.model.set_diffeq_output_scaling_statistics(dm.dy_mu, dm.dy_std)
+			if TRAINED: model.load_weights()
+
+			if os.path.exists((f"{cwd}/MDPredictions/Trained" if TRAINED else f"{cwd}/MDPredictions/Untrained")+f"/VibSpectra_{hparams.ckptname}_N{num_sequential_samples}"):
+				vibspectra_dict = torch.load((f"{cwd}/MDPredictions/Trained" if TRAINED else f"{cwd}/MDPredictions/Untrained") + f"/VibSpectra_{hparams.ckptname}_N{num_sequential_samples}")
+				print(f"Vibspectra loaded from disk ...")
+
+			else:
+				y, pred, y0, t0 = model.predict_sequentially(dm, num_sequential_samples=num_sequential_samples)
+
+				y = torch.cat(y)
+				pred = torch.cat(pred)
+				y = dm.unnormalize(y)
+				pred = dm.unnormalize(pred)
+				y0 = dm.unnormalize(y0)
+
+				# dm.save_as_npz(pred, y, y0, name=hparams.ckptname, path=f"{cwd}/MDPredictions/Trained" if TRAINED else f"{cwd}/MDPredictions/Untrained")
+				vibspectra_dict = dm.plot_vibrational_spectra(y=y, pred=pred, extra_title=f'Interpolation {hparams.dataset_nicestr}, T={hparams.output_length_val}', show=False)
+				torch.save(obj=vibspectra_dict, f=(f"{cwd}/MDPredictions/Trained" if TRAINED else f"{cwd}/MDPredictions/Untrained") + f"/VibSpectra_{hparams.ckptname}_N{num_sequential_samples}")
+
+
+			if TRAINED: trained_spectra_dicts += [vibspectra_dict]
+			else: untrained_spectra_dicts += [vibspectra_dict]
+
+		# for i, (T, dict) in enumerate(zip([5, 10, 20, 40, 80], untrained_spectra_dicts)):
+		# 	plt.plot(dict['frequency'], dict['pred_pdos'], label=f'Interpolation T={T}', ls='--')
+
+		assert np.sum(np.abs((trained_spectra_dicts[-1]['pred_pdos'] - trained_spectra_dicts[-1]['true_pdos'])))>0.0
+		# print(f"{np.sum(np.abs((trained_spectra_dicts[-1]['pred_pdos'] - trained_spectra_dicts[-1]['true_pdos'])))=}")
+		scaling = untrained_spectra_dicts[-1]['true_pdos'][0] / untrained_spectra_dicts[-1]['pred_pdos'][0] if T!=80 else 1
+		untrained_spectra_dicts[-1]['pred_pdos'] = untrained_spectra_dicts[-1]['pred_pdos'] * scaling
+		
+		diff = trained_spectra_dicts[-1]['pred_pdos'] - trained_spectra_dicts[-1]['true_pdos']
+		max_diff = np.max(np.abs(diff)) if np.max(np.abs(diff)) > max_diff else max_diff
+		
+
+		
+		axs[i].plot(trained_spectra_dicts[-1]['frequency'], trained_spectra_dicts[-1]['true_pdos'], 	label='Ground Truth' if T==5 else None, alpha=0.5, color='orange')
+		axs[i].plot(trained_spectra_dicts[-1]['frequency'], trained_spectra_dicts[-1]['pred_pdos'], 	label=f'MLMD T={T} fs', alpha=0.5, color='blue')
+		axs[i].plot(untrained_spectra_dicts[-1]['frequency'], untrained_spectra_dicts[-1]['pred_pdos'], label=f'Interpolation T={T} fs', alpha=0.5, color='red')
+		axs[i].fill_between(untrained_spectra_dicts[-1]['frequency'], 0, untrained_spectra_dicts[-1]['pred_pdos'], alpha=0.25, color='red')
+
+		axs[i+1].plot(trained_spectra_dicts[-1]['frequency'], diff, color='blue', alpha=0.5)
+		axs[i+1].plot(trained_spectra_dicts[-1]['frequency'], np.zeros_like(diff), color='black', alpha=0.5)
+		axs[i+1].ticklabel_format(axis='y', style='sci', scilimits=(-1, 1), useMathText=True)
+		axs[i+1].set_ylim(-4*10**-4, 4 * 10 ** -4)
+
+		if T==80:
+			maxerror_index = np.argmax(np.abs(diff))
+			maxerror_index = 5500
+			print(f"{maxerror_index=}")
+			axins = zoomed_inset_axes(parent_axes=axs[i], zoom=15, loc='upper right')
+			# axins.set_ylim(untrained_spectra_dicts[-1]['true_pdos'][maxerror_index] - 0.005, untrained_spectra_dicts[-1]['true_pdos'][maxerror_index] + 0.005)
+			# axins.plot(untrained_spectra_dicts[-1]['frequency'][:100], untrained_spectra_dicts[-1]['pred_pdos'][:100],label=f'Interpolation T={T}', alpha=0.5, color='black')
+			index_start = 5430
+			index_end = 5550
+			axins.plot(trained_spectra_dicts[-1]['frequency'][index_start:index_end], trained_spectra_dicts[-1]['true_pdos'][index_start: index_end],alpha=0.5, color='orange')
+			axins.plot(trained_spectra_dicts[-1]['frequency'][index_start:index_end], trained_spectra_dicts[-1]['pred_pdos'][index_start: index_end],alpha=0.5, color='blue')
+			axins.set_yticks([])
+			axins.set_xticks([])
+			axins.set_title('15x')
+			mark_inset(axs[i], axins, loc1=2, loc2=4, fc="none", ec="0.5")
+
+		# axs[i].legend(frameon=False, loc='upper center')
+			'''Custom legend'''
+		legend_elements = [Line2D([0], [0], color='orange', lw=4, label='Ground Truth'),
+		                   Line2D([0], [0], color='blue', lw=4, label='MLMD Prediction'),
+		                   Patch(facecolor='red', alpha=0.5, edgecolor='red', label='From Training Data')]
+		axs[0].legend(frameon=False, handles=legend_elements, loc='upper right')
+		axs[i].set(frame_on=False)
+		axs[i].set_xlim(0, 3200) # Frequency cut off
+		axs[i+1].set_xlim(0, 3200) # Frequency cut off
+		
+		axs[i].set_ylabel('VDOS [a.u.]')
+		axs[i].set_xlabel('Frequency [cm$^{-1}$]')
+		
+		axs[i+1].set(frame_on=False)
+		axs[i+1].set_ylabel('Difference [a.u.]')
+		axs[i+1].set_xlabel('Frequency [cm$^{-1}$]')
+
+		# axs[i].set_title(f'Velocity Auto-Correlation Function of Trained Models' if TRAINED else f'Velocity Auto-Correlation Function of Interpolation')
+
+	plt.tight_layout()
+	plt.savefig(f"VelAutoCorrFuncTrainedCombined.pdf" if TRAINED else f"VelAutoCorrFuncUntrainedCombined.pdf")
+	plt.savefig(f"VelAutoCorrFuncTrainedCombined.svg" if TRAINED else f"VelAutoCorrFuncUntrainedCombined.svg")
+	plt.show()
+
+if plotting_mode=='interatomicdistances':
+
+	fontsize = 60
+	params = {'font.size': fontsize,
+			  'legend.fontsize': fontsize*0.75,
+			  'xtick.labelsize': fontsize,
+			  'ytick.labelsize': fontsize,
+			  'axes.labelsize': fontsize,
+			  'figure.figsize': (12, 12),
+			  'figure.facecolor': 'white',
+			  'lines.linewidth': 3,
+			  'text.usetex': True,
+			  'mathtext.fontset': 'stix',
+			  'font.family': 'STIXGeneral'
+			  }
+	plt.rcParams.update(params)
+	
+	for DATASET_ITERATOR in [-1]:
+		hparams = Interpolation_HParamParser(logger=0, plot=0, show=0, load_weights=1, save_weights=0, fast_dev_run=0,
+											 project='vibrationalspectra',
+											 model='bi_lstm', num_layers=5, num_hidden_multiplier=10, criterion='MAE',
+											 interpolation=True, interpolation_mode='adiabatic', integration_mode='diffeq',
+											 diffeq_output_scaling=1,
+											 dataset=['malonaldehyde_dft.npz', 'benzene_dft.npz', 'ethanol_dft.npz',
+													  'toluene_dft.npz', 'naphthalene_dft.npz', 'salicylic_dft.npz',
+													  'paracetamol_dft.npz', 'aspirin_dft.npz',
+													  'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'
+													  ][DATASET_ITERATOR],
+											 input_length=1, output_length=20, batch_size=200 if torch.cuda.is_available() else 64, auto_scale_batch_size=False,
+											 optim='adam', lr=1e-3, train_traj_repetition=1, max_epochs=2000 if torch.cuda.is_available() else 2
+											 )
+	
+		dm = load_dm_data(hparams)
+	
+		if hparams.auto_scale_batch_size:
+			new_batch_size = auto_scale_batch_size(hparams, Model, dm)
+			hparams.__dict__.update({'batch_size': new_batch_size})
+	
+		model = Model(**vars(hparams))
+		model.model.set_diffeq_output_scaling_statistics(dm.dy_mu, dm.dy_std)
+	
+		model.load_weights()
+		model.plot_interatomic_distances_histogram(dm)
+		model.plot_speed_histogram(dm)
+
+if plotting_mode=='aldehydeplot':
+	
+	print(f"\n Aldehyde plot \n ")
+	
+	for DATASET_ITERATOR in [-1]:
+		hparams = Interpolation_HParamParser(logger=1, plot=0, show=0, load_weights=1, save_weights=0, fast_dev_run=0,
+											 project='vibrationalspectra',
+											 model='bi_lstm', num_layers=5, num_hidden_multiplier=10, criterion='MAE',
+											 interpolation=True, interpolation_mode='adiabatic', integration_mode='diffeq',
+											 diffeq_output_scaling=1,
+											 dataset=['malonaldehyde_dft.npz', 'benzene_dft.npz', 'ethanol_dft.npz',
+													  'toluene_dft.npz', 'naphthalene_dft.npz', 'salicylic_dft.npz',
+													  'paracetamol_dft.npz', 'aspirin_dft.npz',
+													  'keto_100K_0.2fs.npz', 'keto_300K_0.2fs.npz', 'keto_500K_0.2fs.npz'
+													  ][DATASET_ITERATOR],
+											 input_length=1, output_length=5,
+											 batch_size=200 if torch.cuda.is_available() else 64,
+											 auto_scale_batch_size=False,
+											 optim='adam', lr=1e-3, train_traj_repetition=1,
+											 max_epochs=2000 if torch.cuda.is_available() else 2
+											 )
+	
+		dm = load_dm_data(hparams)
+		model = Model(**vars(hparams))
+		model.model.set_diffeq_output_scaling_statistics(dm.dy_mu, dm.dy_std)
+	
+	
+		TRAINED = True
+		if TRAINED: model.load_weights()
+		# y, pred, y0, t0 = model.predict_sequentially(dm)
+		y, pred, y0, t0 = model.predict_sequentially(dm, num_sequential_samples=int(dm.data.shape[1]*0.88))
+		# y, pred, y0, t0 = model.predict_sequentially(dm, num_sequential_samples=2000)
+		# y, pred, y0, t0 = model.predict_sequentially(dm, num_sequential_samples=300000)
+	
+		y = torch.cat(y)
+		pred = torch.cat(pred)
+		y = dm.unnormalize(y)
+		pred = dm.unnormalize(pred)
+		y0 = dm.unnormalize(y0)
+	
+		dm.save_as_npz(pred=pred, y=y, conditions=y0, name=hparams.ckptname,
+					   path=f"{cwd}/MDPredictions/Trained" if TRAINED else f"{cwd}/MDPredictions/Untrained")
+	
+		cwd_ = str(cwd).replace(' ', '\ ')
+		# os.system(f"python {cwd_}/CorrMap2Var_ASE_v10_230620.py {cwd_}/MDPredictions/{'Trained' if TRAINED else 'Untrained'}/Pred_{hparams.ckptname}.npz dihedral[3,2,1,0] dihedral[4,0,1,2] ")
+		os.system(f"python {cwd_}/CorrMap2Var_ASE_v10_230620.py {cwd_}/MDPredictions/{'Trained' if TRAINED else 'Untrained'}/True_{hparams.ckptname}.npz dihedral[3,2,1,0] dihedral[4,0,1,2] ")
+
 # exit()
 
-scaling = {'y_mu': dm.y_mu, 'y_std': dm.y_std, 'dy_mu': dm.dy_mu, 'dy_std': dm.y_std}
-hparams.__dict__.update({'in_features': dm.y_mu.shape[-1]})
-hparams.__dict__.update({'num_hidden': dm.y_mu.shape[-1]*hparams.num_hidden_multiplier})
+# print(vibspectra_dict['frequency_loss'])
+# hparams.logger.experiment.log({'Pred': wandb.Image(fig, caption="Val Prediction")})
+# hparams.logger.log_metrics({'VibSpectraLoss_MSE': vibspectra_dict['frequency_diff'].pow(2).mean(),
+# 							'VibSpectraLoss_MAE': vibspectra_dict['frequency_diff'].pow(2).sum()}, step=0)
 
-model = Model(**vars(hparams))
-
-# print(f"{model.summarize()}")
-# model.measure_inference_speed(dm)
 # exit()
 
-if hparams.logger is True:
-	os.system('wandb login --relogin afc4755e33dfa171a8419620e141ebeaeb8f27f5')
-	logger = WandbLogger(project=hparams.project, entity='mlmd',name=hparams.experiment)
-	hparams.__dict__.update({'logger': logger})
+# dm.save_as_npz(pred, y, y0, name=hparams.ckptname, path=f"{cwd}/MDPredictions")
 
-early_stop_callback = EarlyStopping(
-	monitor='Val/EpochMSE', mode='min',
-	patience=5,min_delta=0.000,
-	verbose=True
-)
-# model_checkpoint_callback = CustomModelCheckpoint(	filepath=f"ckpt/{hparams.ckptname}",
-# 					    		monitor='Val/MSE', mode='min',
-# 							save_top_k=1)
-
-trainer = Trainer.from_argparse_args(	hparams,
-				     	# min_steps=1000,
-				     	# max_steps=50,
-				     	progress_bar_refresh_rate=10,
-				     	callbacks=[early_stop_callback],
-				     	# limit_train_batches=10,
-				     	# limit_val_batches=10,
-					val_check_interval=1.,
-				     	# checkpoint_callback=model_checkpoint_callback,
-				     	gpus=torch.cuda.device_count(),
-					distributed_backend="ddp" if torch.cuda.device_count()>1 else None
-				     	)
-
-trainer.fit(model, datamodule=dm)
-# model.predict_sequentially(dm)
-# plt.show()
-# model.plot_sequential_prediction(dm)
-# plt.show()

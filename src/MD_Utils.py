@@ -1,3 +1,5 @@
+import numbers
+
 import numpy as np
 import argparse, sys, os, shutil, time
 
@@ -7,12 +9,19 @@ import torch.nn.functional as F
 def str2bool(v):
 	if isinstance(v, bool):
 		return v
-	if v.lower() in ('yes', 'true', 't', 'y', '1'):
-		return True
-	elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-		return False
+	elif type(v)==str:
+		if v.lower() in ('yes', 'true', 't', 'y', '1'):
+			return True
+		elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+			return False
+	elif isinstance(v, numbers.Number):
+		assert v in [0,1]
+		if v==1:
+			return True
+		if v==0:
+			return False
 	else:
-		raise argparse.ArgumentTypeError('Boolean value expected.')
+		raise argparse.ArgumentTypeError(f'Invalid Value: {type(v)}')
 
 def clean_hparam_directory(params):
 
@@ -42,7 +51,6 @@ def NormalizedLoss(pred, target):
 	pred_ 	= (pred - target_mu)/(target_std)
 
 	return F.mse_loss(pred_, target_)
-
 
 class Timer:
 	"""Record multiple running times."""
@@ -89,3 +97,4 @@ class Benchmark:
 
 	def __exit__(self, *args):
 		print(self.description % (self.timer.stop() / self.repetitions))
+

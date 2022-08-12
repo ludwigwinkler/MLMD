@@ -57,7 +57,7 @@ def SpecialFunctions(name_func, X, parameters):
         mean_n = np.cross(X[parameters['benzene_C_idx'][2]] - X[parameters['benzene_C_idx'][0]],
                           X[parameters['benzene_C_idx'][4]] - X[parameters['benzene_C_idx'][0]])
         mean_n+= np.cross(X[parameters['benzene_C_idx'][3]] - X[parameters['benzene_C_idx'][1]],
-                          X[parameters['benzene_C_idx'][5]] - X[parameters['benzene_C_idx'][1]])
+                          X[parameters['benzene_`C_idx'][5]] - X[parameters['benzene_C_idx'][1]])
         mean_n+= np.cross(X[parameters['benzene_C_idx'][4]] - X[parameters['benzene_C_idx'][2]],
                           X[parameters['benzene_C_idx'][0]] - X[parameters['benzene_C_idx'][2]])
         mean_n+= np.cross(X[parameters['benzene_C_idx'][5]] - X[parameters['benzene_C_idx'][3]],

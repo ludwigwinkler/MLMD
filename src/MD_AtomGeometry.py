@@ -24,7 +24,7 @@ class Atom(torch.nn.Module):
 
 	def __init__(self, data, hparams):
 
-		self.atom_type = hparams.data_set
+		self.atom_type = hparams.dataset
 
 		super().__init__()
 		if data.dim()==3: # data.shape=[batch, timesteps, atoms x (3x pos + 3x vel)
@@ -123,6 +123,7 @@ class Atom(torch.nn.Module):
 
 			return angle
 
+	@torch.no_grad()
 	def compute_distance(self):
 
 		dist = self.pos.unsqueeze(-3) - self.pos.unsqueeze(-2) # expand around atoms and leave final dim untouched
@@ -141,7 +142,7 @@ class Atom(torch.nn.Module):
 
 def compute_innermolecular_distances(data):
 
-	assert data.dim()==3
+	assert data.dim()==3, f"{data.shape=}"
 
 	pos = data[:, :, :data.shape[-1] // 2]
 	num_atoms = pos.shape[-1]//3
@@ -157,35 +158,35 @@ def compute_innermolecular_distances(data):
 if __name__=='__main__':
 
 	data = Tensor([[1,1,1,0,0,0],[0,0,0,1,1,1],[1,1,-1,2,2,2]])
-	data = Tensor([[1,0,0,0],[0,0,0,0],[0,1,0,0]])
-	data = data.reshape(1,1,*data.shape)
-
-	atom = Atom(data)
-
-	print(atom.compute_angle())
-	print(atom.pos.requires_grad)
-	print(atom.pos)
-
-	optim = torch.optim.Adam(atom.parameters(), lr=0.01, betas=(0.66, 0.66))
-
-	for i in range(100):
-		optim.zero_grad()
-
-		# angle = torch.sum(torch.abs(atom.compute_angle()))
-		angle = torch.sum((atom.compute_angle())**2)
-		angle.backward()
-
-		print(f'Epoch: {i}')
-		print(f'Angle: {angle.detach().item()}')
-		print(f'{atom.pos.detach()=}')
-		print()
-		if i == 92:
-			print(f'{torch.sum((atom.compute_angle()))}')
-			print(atom.pos.grad)
-			print(torch.sum((atom.compute_angle())**2))
-		if torch.isnan(angle):
-
-			break
-
-		optim.step()
+	# data = Tensor([[1,0,0,0],[0,0,0,0],[0,1,0,0]])
+	# data = data.reshape(1,1,*data.shape)
+	# 
+	# atom = Atom(data)
+	# 
+	# print(atom.compute_angle())
+	# print(atom.pos.requires_grad)
+	# print(atom.pos)
+	# 
+	# optim = torch.optim.Adam(atom.parameters(), lr=0.01, betas=(0.66, 0.66))
+	# 
+	# for i in range(100):
+	# 	optim.zero_grad()
+	# 
+	# 	# angle = torch.sum(torch.abs(atom.compute_angle()))
+	# 	angle = torch.sum((atom.compute_angle())**2)
+	# 	angle.backward()
+	# 
+	# 	print(f'Epoch: {i}')
+	# 	print(f'Angle: {angle.detach().item()}')
+	# 	print(f'{atom.pos.detach()=}')
+	# 	print()
+	# 	if i == 92:
+	# 		print(f'{torch.sum((atom.compute_angle()))}')
+	# 		print(atom.pos.grad)
+	# 		print(torch.sum((atom.compute_angle())**2))
+	# 	if torch.isnan(angle):
+	# 
+	# 		break
+	# 
+	# 	optim.step()
 

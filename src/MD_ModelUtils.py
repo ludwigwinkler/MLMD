@@ -16,6 +16,8 @@ from torch.nn import ReLU, LeakyReLU, Tanh, CELU, Softplus, Sigmoid
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn.functional as F
 
+import pytorch_lightning
+from pytorch_lightning import Trainer, seed_everything
 
 from torchdiffeq import odeint_adjoint, odeint
 from torchdiffeq import odeint_adjoint as odeint
@@ -90,6 +92,7 @@ class ForwardHook():
 		# 	plt.show()
 		if self.hparams.log:
 			self.hparams.logger.add_histogram(tag=self.name, values=input[0])
+
 class Hook():
 	def __init__(self, module, backward=False):
 		if backward==False:
@@ -374,3 +377,24 @@ class IntegratorWrapper(torch.nn.Module):
 	@nfe.setter
 	def nfe(self, value):
 		self.odefunc.nfe = value
+
+def auto_scale_batch_size(hparams_, Model, datamodule):
+
+	hparams = copy.deepcopy(hparams_)
+	hparams.logger = False
+
+	model = Model(**vars(hparams))
+	model.model.set_diffeq_output_scaling_statistics(datamodule.dy_mu, datamodule.dy_std)
+	trainer = Trainer.from_argparse_args(hparams,
+					     val_check_interval=1.,
+					     gpus=1 if torch.cuda.is_available() else None,
+					     distributed_backend=None
+					     )
+
+	tuner = pytorch_lightning.tuner.tuning.Tuner(trainer)
+
+	new_batch_size = tuner.scale_batch_size(model, datamodule=datamodule, init_val=10, max_trials=25)
+
+	del hparams, model, trainer, tuner
+
+	return new_batch_size
